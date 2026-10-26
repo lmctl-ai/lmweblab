@@ -1,6 +1,7 @@
 # Test both static CloudFront endpoints and the dynamic EC2 endpoint through lmcurl.
 import "./common.lms";
 let o = options(ARGV);
+let phase_started=now();
 configure_live(o);mkdir("reports");
 assert(file_exists(".lmweblab-local/lmaws-stack.json"), "run up first");
 let mode = "--offline";
@@ -64,3 +65,10 @@ end _dsl_
 savedsl(p, ".lmweblab-local/lmaws-test.dslb");
 let r=lmaws_execute(p,o,".lmweblab-local/lmaws-test.dslb",900000);
 println(r.stdout); if (r.code != 0) { println(r.stderr); assert(false, "web stack test failed"); }
+
+let phase_state=json_parse(read_file(".lmweblab-local/lmaws-web-state-"+o.run_id+".json"));
+let phase=get(phase_state,"https","")=="true"?"https":"http";
+let p95=0;let load_requests=0;
+for(line in lines(read_file("reports/load-check.csv"))){let fields=split(line,",");if(len(fields)>1&&fields[0]=="p95_ms"){p95=num(fields[1]);}if(len(fields)>1&&fields[0]=="requests"){load_requests=num(fields[1]);}}
+write_file(".lmweblab-local/phase-"+phase+".json",json_stringify({run_id:o.run_id,phase:phase,elapsed_ms:now()-phase_started,requests:total_requests,bytes_bound:total_bytes,load_requests:load_requests,p95_ms:p95,passed:true},2));
+for(file in ["static-contract.csv","dynamic-contract.csv","load-check.csv","readiness.csv","compression.csv"]){write_file(".lmweblab-local/"+phase+"-"+file,read_file("reports/"+file));}

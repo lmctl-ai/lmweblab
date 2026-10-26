@@ -1,6 +1,7 @@
 # Tear down only resources owned by this run. The host prints the deletion plan before applying it.
 import "./common.lms";
 let o = options(ARGV);
+let phase_started=now();
 let run_id = o.run_id;
 assert(run_id != "", "down requires a run id");
 configure_live(o);
@@ -13,3 +14,5 @@ end _dsl_
 savedsl(p, ".lmweblab-local/lmaws-down.dslb");
 let r=lmaws_execute(p,o,".lmweblab-local/lmaws-down.dslb",1500000);
 println(r.stdout); if (r.code != 0) { println(r.stderr); assert(false, "web stack down failed"); }
+
+write_file(".lmweblab-local/down-summary.json",json_stringify({run_id:o.run_id,elapsed_ms:now()-phase_started,passed:true},2));

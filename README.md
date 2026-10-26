@@ -20,7 +20,7 @@ lmctl lmaws/web_stack.lms all --offline --phase2
 The dynamic app serves escaped query echo, request counters, timestamps, hostname, and `/api/info`. Teardown is available separately as `lmctl lmaws/down.lms <run-id>` and verifies the owned state before deletion.
 
 
-The live driver needs lmaws v0.1.14 or newer, or the current development host on `PATH`. Clone this repository before running the lifecycle driver; the gallery report URL is self-contained. Set `AWS_PROFILE=lmaws`, `AWS_REGION=us-east-1`, and `LMWEBLAB_DOMAIN` to the existing public hosted-zone domain. Committed examples use `example.com` as a placeholder.
+The live driver needs lmaws v0.1.16 or newer, or the current development host on `PATH`. Clone this repository before running the lifecycle driver; the gallery report URL is self-contained. Set `AWS_PROFILE=lmaws`, `AWS_REGION=us-east-1`, and `LMWEBLAB_DOMAIN` to the existing public hosted-zone domain. Committed examples use `example.com` as a placeholder.
 
 ```sh
 lmctl lmaws/web_stack.lms all --live --phase2
@@ -32,3 +32,5 @@ bash test.sh
 HTTP checks include bounded readiness polling, exact status/content checks, HTML escaping, JSON schema, monotonic counters/timestamps, and a ten-request load check. Timings are milliseconds. The user-data server schedules termination, and standard CPU-credit mode avoids surplus-credit charges. Live state, endpoint URLs and raw evidence stay in ignored private files; committed pictures use synthetic fixtures.
 
 [Importable per-step recipes](lmaws/recipes/README.md) support reuse from a local path or a raw URL. [Shared test contracts](shared/README.md) describe the lmcurl-only HTTP tests.
+
+Live Part A passed both phases: p95 **391 ms HTTP** and **152 ms HTTPS**. The successful estimate was **$0.00108**; the complete campaign estimate was **$0.00514**. A fresh lmaws process verified **zero active leftovers** across all seven attempt namespaces. [Timings, cost basis and tool comparison](compare/RESULTS.md).

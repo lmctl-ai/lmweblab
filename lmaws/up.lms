@@ -1,6 +1,7 @@
 # Provision the lmaws web stack. Offline is the default and never contacts AWS.
 import "./common.lms";
 let o = options(ARGV);
+let phase_started=now();
 configure_live(o);
 if (o.live && o.cidr == "") {
   let ip = system(["lmctl", "lmaws/caller_ip.lms"], 30000);
@@ -36,3 +37,5 @@ let r=lmaws_execute(p,o,".lmweblab-local/lmaws-up.dslb",1500000);
 println(r.stdout); if (r.code != 0) { println(r.stderr); assert(false, "web stack up failed"); }
 let mode = "offline"; if (o.live) { mode = "live"; }
 write_file(".lmweblab-local/lmaws-stack.json", json_stringify({run_id:o.run_id,domain:o.domain,mode:mode}, 2));
+
+write_file(".lmweblab-local/up-summary.json",json_stringify({run_id:o.run_id,elapsed_ms:now()-phase_started,passed:true},2));

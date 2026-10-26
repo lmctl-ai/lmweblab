@@ -36,11 +36,18 @@ if(offline!="1"){
  assert(str_contains(alias_home.body(),"lmweblab"));assert(image.bytes()>1000);
  let compressed=s.get(home_path).header("Accept-Encoding","gzip").proxy("").retry(5,1000).send();
  assert_eq(compressed.status(),200);assert(str_contains(compressed.body(),"lmweblab"));
- assert(compressed.header("x-cache")!="");
+ assert(compressed.header("x-cache")!="");assert(str_contains(compressed.header("content-encoding"),"gzip"));
+ file_write("reports/compression.csv","encoding,"+compressed.header("content-encoding")+"\nbody_bytes,"+str(compressed.bytes())+"\n");
  http_requests=http_requests+compressed.attempts();http_bytes=http_bytes+compressed.bytes();
- # CloudFront compresses eligible responses of at least 1000 bytes; content encoding can vary during the initial cache fill.
+ if(str_contains(alias,"https://")){
+   let redirect=curl.session(str_replace(alias,"https://","http://")).get(home_path).proxy("").follow(false).timeout(10000).send();
+   assert_eq(redirect.status(),301);assert(str_contains(redirect.header("location"),"https://"));
+   http_requests=http_requests+redirect.attempts();http_bytes=http_bytes+redirect.bytes();
+ }
+ # Compression details are retained in the numeric/metadata report for verification.
 }
 
+if(offline=="1"){file_write("reports/compression.csv","encoding,synthetic\nbody_bytes,0\n");}
 file_write("reports/static-contract.csv","requests,"+str(http_requests)+"\nbytes_bound,"+str(http_bytes)+"\noffline,"+offline+"\nhome_status,"+str(home.status())+"\nabout_status,"+str(about.status())+"\ncss_status,"+str(css.status())+"\nmissing_status,"+str(missing.status())+"\nhome_bytes,"+str(home.bytes())+"\n");
 mock.stop();
 println("static contract passed");

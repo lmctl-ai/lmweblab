@@ -1,0 +1,75 @@
+{
+  "implementation": "lmscript + lmaws; lmcurl HTTP tests",
+  "profile": "lmaws",
+  "region": "us-east-1",
+  "live_result": "passed",
+  "timings_seconds": {
+    "bucket": 6.221407061,
+    "certificate": 33.015777095,
+    "distribution": 157.299596082,
+    "dns_site": 25.823144503,
+    "compute": 9.680433016,
+    "dns_app": 24.097073738,
+    "reserve_http": 0.002249516,
+    "record_http": 0.000564193,
+    "https": 73.883786752
+  },
+  "teardown_seconds": 406.581,
+  "phases": {
+    "http": {
+      "phase": "http",
+      "elapsed_ms": 7246,
+      "requests": 22,
+      "bytes_bound": 56931,
+      "load_requests": 10,
+      "p95_ms": 390.700413,
+      "passed": true
+    },
+    "https": {
+      "phase": "https",
+      "elapsed_ms": 4802,
+      "requests": 22,
+      "bytes_bound": 56932,
+      "load_requests": 10,
+      "p95_ms": 151.879225,
+      "passed": true
+    }
+  },
+  "checks": {
+    "private_origin": true,
+    "custom_alias_and_cloudfront_hostname": true,
+    "dynamic_html_and_json": true,
+    "escaped_echo": true,
+    "counter_and_time": true,
+    "gzip": "gzip",
+    "exact_404": true,
+    "tls_verification": true,
+    "http_redirect_status": 301
+  },
+  "cost": {
+    "successful_stack_estimated_usd": "0.00107766",
+    "all_attempts_and_independent_checks_estimated_usd": "0.00513459",
+    "sdk_request_attempts": 1627,
+    "http_suite_requests": 44,
+    "independent_redirect_requests": 1,
+    "basis": "Price-table estimate; response counts, bounded transfer, nano bid ceiling, public IPv4 and 8 GiB gp3 time. Earlier incomplete receipts use a conservative storage bound; no free-tier credits deducted. Prices vary by region."
+  },
+  "cleanup": {
+    "attempt_namespaces_checked": 7,
+    "active_leftovers": 0,
+    "independent_verifier": "fresh native lmaws Cloud.web_find process; provider inventories, no AWS CLI",
+    "retained_provider_history": "terminated instance and closed one-time Spot request metadata is excluded from active leftovers"
+  },
+  "improvements": [
+    "ACM preparation before initial CloudFront deployment",
+    "exact run-tag and OAC creation-proof guards",
+    "DNS creation checkpoints before propagation waits",
+    "bounded capacity and unavailable-AZ fallback",
+    "fresh-instance visibility retries",
+    "whole-run HTTP cost admission and integer JSON accounting",
+    "per-invocation compiler environment propagation",
+    "actual user-data server fixture and millisecond latency assertions"
+  ],
+  "host_patch": "v0.1.16",
+  "pictures": "synthetic only"
+}
