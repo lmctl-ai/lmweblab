@@ -1,0 +1,8 @@
+# === CONFIG ===
+let REGION="us-east-1"; let NAME_PREFIX="lmaws"; let SCENARIO_SLUG="s06"; let RUNTIME="python3.12"; let MEMORY_MB=128; let TIMEOUT_S=10; let SCHEDULE="rate(1 minute)"; let ROLE="lmaws_lambda_exec";
+# === END CONFIG ===
+mkdir(".lmweblab-local"); let run_id=getenv("LMWEBLAB_RUN_ID","s06demo"); let bucket=NAME_PREFIX+"-"+SCENARIO_SLUG+"-"+run_id; let table=NAME_PREFIX+"_"+SCENARIO_SLUG+"_runs_"+run_id; let name=NAME_PREFIX+"_"+SCENARIO_SLUG+"_"+run_id; let rule=NAME_PREFIX+"_"+SCENARIO_SLUG+"_rule_"+run_id;
+let p=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let cloud=aws.demo(); let run=cloud.run(${run_id},".lmweblab-local/run.json"); let b=run.bucket(${bucket}); let t=run.table(${table}); let fn=cloud.lambda_function(${name},${ROLE},${RUNTIME},"reporter.handler","def handler(event, context): return {'statusCode':200,'body':'report'}",${MEMORY_MB},${TIMEOUT_S}); let er=cloud.event_rule(${rule},${SCHEDULE}); let target=er.target(fn.status().get("arn")); file_write(".lmweblab-local/state.json",json_stringify({scenario:"06",run_id:${run_id},bucket:${bucket},table:${table},name:${name},rule:${rule},schedule:${SCHEDULE}})); file_write(".lmweblab-local/up.json",json_stringify({bucket:b,table:t,lambda:fn.status(),event_rule:target}));
+end _dsl_
+savedsl(p,".lmweblab-local/up.dslb"); let r=system(concat(dsl_cli(p),["--dry-run","--dsl",".lmweblab-local/up.dslb"]),120000); assert(r.code==0); println("PASS scenario 06 up (offline fake transport)"); println("estimated cost: $0.0000");

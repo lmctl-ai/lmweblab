@@ -1,0 +1,8 @@
+# === CONFIG ===
+let REGION="us-east-1"; let NAME_PREFIX="lmaws"; let SCENARIO_SLUG="s04"; let RUNTIME="python3.12"; let MEMORY_MB=128; let TIMEOUT_S=10; let TTL_SECONDS=3600; let ROLE="lmaws_lambda_exec";
+# === END CONFIG ===
+mkdir(".lmweblab-local"); let run_id=getenv("LMWEBLAB_RUN_ID","s04demo"); let table=NAME_PREFIX+"_"+SCENARIO_SLUG+"_entries_"+run_id; let name=NAME_PREFIX+"_"+SCENARIO_SLUG+"_"+run_id;
+let p=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let cloud=aws.demo(); let run=cloud.run(${run_id},".lmweblab-local/run.json"); let row=run.table(${table}); let fn=cloud.lambda_function(${name},${ROLE},${RUNTIME},"guestbook.handler","def handler(event, context): return {'statusCode':200,'body':'{\\\"entries\\\":[]}'}",${MEMORY_MB},${TIMEOUT_S}); let endpoint=fn.url("Scenario 04 public guestbook demo URL; payloads are bounded and contain no secrets"); file_write(".lmweblab-local/state.json",json_stringify({scenario:"04",run_id:${run_id},table:${table},name:${name},endpoint:endpoint,ttl_s:${TTL_SECONDS}})); file_write(".lmweblab-local/up.json",json_stringify({table:row,lambda:fn.status()}));
+end _dsl_
+savedsl(p,".lmweblab-local/up.dslb"); let r=system(concat(dsl_cli(p),["--dry-run","--dsl",".lmweblab-local/up.dslb"]),120000); assert(r.code==0); println("PASS scenario 04 up (offline fake transport)"); println("estimated cost: $0.0000");

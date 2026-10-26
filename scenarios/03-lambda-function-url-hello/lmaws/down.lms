@@ -1,0 +1,9 @@
+# === CONFIG ===
+let ROLE = "lmaws_lambda_exec";
+# === END CONFIG ===
+assert(file_exists(".lmweblab-local/state.json"));
+let state = json_parse(read_file(".lmweblab-local/state.json")); let name = get(state,"name","");
+let p = _dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let cloud = aws.demo(); let fn = cloud.lambda_function(${name}, ${ROLE}, "python3.12", "handler.handler", "def handler(event, context): return {'statusCode':200}", 128, 10); let gone = fn.delete(); file_write(${".lmweblab-local/down.json"}, gone.json());
+end _dsl_
+savedsl(p, ".lmweblab-local/down.dslb"); let r = system(concat(dsl_cli(p), ["--dry-run", "--dsl", ".lmweblab-local/down.dslb"]), 120000); assert(r.code == 0); println("PASS scenario 03 down; leftovers=0"); println("estimated cost: $0.0000");

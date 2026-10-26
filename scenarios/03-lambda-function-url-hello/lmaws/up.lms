@@ -1,0 +1,26 @@
+# === CONFIG ===
+let REGION = "us-east-1";
+let NAME_PREFIX = "lmaws";
+let SCENARIO_SLUG = "s03";
+let RUNTIME = "python3.12";
+let MEMORY_MB = 128;
+let TIMEOUT_S = 10;
+let ROLE = "lmaws_lambda_exec";
+# === END CONFIG ===
+let state_dir = ".lmweblab-local"; mkdir(state_dir);
+let run_id = getenv("LMWEBLAB_RUN_ID", "s03demo");
+assert(regex_test(run_id, "^[a-z0-9]{4,32}$"));
+let name = NAME_PREFIX + "_" + SCENARIO_SLUG + "_" + run_id;
+let code = "def handler(event, context): return {'statusCode':200,'headers':{'content-type':'application/json'},'body':'{\\\"ok\\\":true,\\\"name\\\":\\\"" + name + "\\\"}'}";
+let p = _dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let cloud = aws.demo();
+let fn = cloud.lambda_function(${name}, ${ROLE}, ${RUNTIME}, "handler.handler", ${code}, ${MEMORY_MB}, ${TIMEOUT_S});
+let endpoint = fn.url("Scenario 03 demo Function URL is intentionally public for an offline API test");
+file_write(${state_dir + "/state.json"}, json_stringify({scenario:"03",run_id:${run_id},name:${name},endpoint:endpoint,role:${ROLE},memory_mb:${MEMORY_MB},timeout_s:${TIMEOUT_S}}));
+file_write(${state_dir + "/up.json"}, fn.status().json());
+end _dsl_
+savedsl(p, state_dir + "/up.dslb");
+let r = system(concat(dsl_cli(p), ["--dry-run", "--dsl", state_dir + "/up.dslb"]), 120000);
+assert(r.code == 0, "scenario 03 up failed: " + r.stderr);
+println("PASS scenario 03 up (offline fake transport)");
+println("estimated cost: $0.0000");

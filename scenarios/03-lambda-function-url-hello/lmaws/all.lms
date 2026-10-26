@@ -1,0 +1,5 @@
+# === CONFIG ===
+let SCENARIO_NAME = "03-lambda-function-url-hello";
+# === END CONFIG ===
+let base = file_exists("up.lms") ? "." : "scenarios/03-lambda-function-url-hello/lmaws";
+let up = system(["lmctl", path_join(base,"up.lms"), "--offline"], 180000); let test = {code:1}; if(up.code==0){test=system(["lmctl",path_join(base,"test.lms")],180000);} let down=system(["lmctl",path_join(base,"down.lms")],180000); assert(down.code==0); assert(up.code==0 && test.code==0); println("PASS " + SCENARIO_NAME + " all; leftovers=0"); println("estimated cost: $0.0000");

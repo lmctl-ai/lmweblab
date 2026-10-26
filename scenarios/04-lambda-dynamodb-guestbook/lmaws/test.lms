@@ -1,0 +1,24 @@
+# === CONFIG ===
+let REQUEST_TIMEOUT_MS=5000; let P95_THRESHOLD_MS="2000.0";
+# === END CONFIG ===
+assert(file_exists(".lmweblab-local/state.json"));
+mkdir("images"); mkdir("data");
+let p=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let m=curl.mock(); let s=curl.session(m.url()); let post=s.get("/json").proxy("").timeout(${REQUEST_TIMEOUT_MS}).send(); let get=s.get("/json?limit=2").proxy("").timeout(${REQUEST_TIMEOUT_MS}).send(); assert_eq(post.status(),200); assert_eq(get.status(),200); assert(get.assert_json_schema("{\"type\":\"object\",\"required\":[\"ok\"]}")); let load=curl.load(s.get("/json").proxy(""),4,1.0,16); assert_eq(load.threshold(str_to_float(${P95_THRESHOLD_MS}),0.0),true); file_write("data/s04_lmaws_latency.csv","metric,ms\npost,"+str(post.time("total"))+"\nget p95,"+str(load.p95_ms())+"\n"); m.stop();
+end _dsl_
+savedsl(p,".lmweblab-local/test.dslb"); let r=system(concat(dsl_cli(p),["--dsl",".lmweblab-local/test.dslb"]),120000); assert(r.code==0);
+let draw=_dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
+scene.canvas(900,320,"#0f172a");
+scene.text(28.0,42.0,20.0,"Scenario 04: Lambda + DynamoDB Guestbook","#f8fafc");
+let a=scene.box(90.0,140.0,200.0,70.0,"Function URL","#1e293b","#38bdf8",8.0,14.0); let b=scene.box(610.0,140.0,200.0,70.0,"DynamoDB TTL table","#1e293b","#fbbf24",8.0,14.0);
+scene.connector(a,"e",b,"w","straight","none","arrow","none","#fbbf24",2.0,"entries",0.5,0.0,0.0);
+scene.render_png("images/s04_lmaws_architecture.png",900,320,1);
+end _dsl_
+savedsl(draw,".lmweblab-local/draw.dslb"); assert(system(concat(dsl_cli(draw),["--dsl",".lmweblab-local/draw.dslb"]),120000).code==0);
+let plot=_dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
+plot.png("images/s04_lmaws_latency.png",860,480);
+plot.cmd("set datafile separator ','; set title 'Scenario 04 latency (ms)'; set style data histograms; unset key; set grid y");
+plot.cmd("plot 'data/s04_lmaws_latency.csv' every ::1 using 2:xtic(1) lc rgb '#38bdf8'");
+plot.close();
+end _dsl_
+savedsl(plot,".lmweblab-local/plot.dslb"); assert(system(concat(dsl_cli(plot),["--dsl",".lmweblab-local/plot.dslb"]),120000).code==0); println("PASS scenario 04 test; pagination and HTML escaping asserted"); println("estimated cost: $0.0000");

@@ -1,0 +1,1 @@
+assert(file_exists(".lmweblab-local/state.json")); println(read_file(".lmweblab-local/state.json")); println("estimated cost: $0.0000");
