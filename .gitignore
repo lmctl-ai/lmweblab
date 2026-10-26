@@ -1,0 +1,24 @@
+# OpenTofu / lmcloud state and working directories
+**/.terraform/
+**/.terraform.lock.hcl
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfvars
+**/*.tfvars.json
+**/*.tfplan
+**/*.dslb
+
+# Local runtime state, ledgers, and live evidence (never commit live IDs/IPs/zones)
+.lmweblab-local/
+.lmaws-local/
+ledgers/
+reports/
+lmcloud/work/
+lmcloud/build/
+lmcloud/live-*
+lmaws/work/
+lmaws/build/
+lmaws/live-*
+evidence/live-*
+reports/live-*
+data/live-*

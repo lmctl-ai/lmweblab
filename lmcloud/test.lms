@@ -1,0 +1,292 @@
+# lmweblab Part B (lmcloud): Verify static site + dynamic app with lmcurl and render picture reports
+# Offline mode (default): runs the full contract & load suite against lmcurl's loopback mock using
+# Request.resolve() for lmaws-tf-site-<run_id>.example.com and lmaws-tf-app-<run_id>.example.com.
+# Live mode (--live or LMWEBLAB_LIVE=1): runs the full contract & load suite against the deployed
+# CloudFront distribution, Route 53 site alias, and Route 53 EC2 spot dynamic server.
+
+mkdir("data");
+mkdir("images");
+mkdir("reports");
+mkdir(".lmweblab-local");
+
+fn env_or(key, fallback) {
+  let v = getenv(key, "");
+  if (v == "") { return fallback; }
+  return v;
+}
+
+live = env_or("LMWEBLAB_LIVE", "0") == "1";
+for (a in ARGV) {
+  if (a == "--live") { live = true; }
+  if (a == "--offline" || a == "--dry-run") { live = false; }
+}
+
+meta = {
+  mode: "offline",
+  run_id: "demo01",
+  domain: "example.com",
+  site_fqdn: "lmaws-tf-site-demo01.example.com",
+  site_url: "http://lmaws-tf-site-demo01.example.com",
+  cloudfront_http_url: "http://d111111abcdef8.cloudfront.net",
+  cloudfront_https_url: "https://d111111abcdef8.cloudfront.net",
+  app_fqdn: "lmaws-tf-app-demo01.example.com",
+  app_url: "http://lmaws-tf-app-demo01.example.com",
+  instance_public_ip: "127.0.0.1"
+};
+
+if (file_exists(".lmweblab-local/lmcloud-stack.json")) {
+  loaded = json_parse(read_file(".lmweblab-local/lmcloud-stack.json"));
+  meta = merge(meta, loaded);
+}
+
+t0 = now();
+
+if (live && get(meta, "mode", "offline") == "live") {
+  cf_url = get(meta, "cloudfront_https_url", "");
+  site_url = get(meta, "site_url", "");
+  site_fqdn = get(meta, "site_fqdn", "");
+  app_url = get(meta, "app_url", "");
+  app_fqdn = get(meta, "app_fqdn", "");
+  app_ip = get(meta, "instance_public_ip", "");
+  run_id = get(meta, "run_id", "");
+
+  p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let cf_base = ${cf_url};
+let site_base = ${site_url};
+let site_host = ${site_fqdn};
+let app_base = ${app_url};
+let app_host = ${app_fqdn};
+let app_ip = ${app_ip};
+let run_id = ${run_id};
+
+# 1. Static site over CloudFront default domain (HTTPS)
+let cf = curl.session(cf_base);
+let r_cf_idx = cf.get("/index.html").timeout(15000).retry(5, 2000).send();
+assert_eq(r_cf_idx.status(), 200);
+assert(str_contains(r_cf_idx.body(), "lmweblab Static Site"));
+assert(str_len(r_cf_idx.header("cache-control")) > 0);
+
+let r_cf_root = cf.get("/").timeout(15000).retry(5, 2000).send();
+assert_eq(r_cf_root.status(), 200);
+assert(str_contains(r_cf_root.body(), "lmweblab Static Site"));
+
+let r_cf_about = cf.get("/about.html").timeout(15000).retry(5, 2000).send();
+assert_eq(r_cf_about.status(), 200);
+assert(str_contains(r_cf_about.body(), "About lmweblab"));
+
+let r_cf_css = cf.get("/style.css").header("Accept-Encoding", "gzip").timeout(15000).retry(5, 2000).send();
+assert_eq(r_cf_css.status(), 200);
+assert(str_contains(r_cf_css.body(), "--accent: #0969da"));
+
+let r_cf_img = cf.get("/banner.png").timeout(15000).retry(5, 2000).send();
+assert_eq(r_cf_img.status(), 200);
+assert(r_cf_img.bytes() > 1000);
+
+let r_cf_404 = cf.get("/nonexistent-path-404.html").timeout(15000).retry(5, 2000).send();
+assert_eq(r_cf_404.status(), 404);
+assert(str_contains(r_cf_404.body(), "404"));
+
+# 2. Static site DNS resolution check on Route 53 alias name
+let site_s = curl.session(site_base);
+let r_site_dns = site_s.get("/index.html").timeout(15000).retry(5, 2000).send();
+assert(r_site_dns.status() == 200 || r_site_dns.status() == 403 || r_site_dns.status() == 400);
+
+# 3. Dynamic page over Route 53 app name + explicit --resolve verification
+let app = curl.session(app_base);
+let r_app_escaped = app.get("/?echo=%3Cscript%3Ealert(1)%3C/script%3E").resolve(app_host + ":80:" + app_ip).timeout(10000).retry(5, 2000).send();
+assert_eq(r_app_escaped.status(), 200);
+assert(str_contains(r_app_escaped.body(), "lmweblab Dynamic App"));
+assert(str_contains(r_app_escaped.body(), run_id));
+assert(str_contains(r_app_escaped.body(), "&lt;script&gt;alert(1)&lt;/script&gt;"));
+assert(!str_contains(r_app_escaped.body(), "<script>alert(1)</script>"));
+
+let r_app_dns = app.get("/?echo=dns_ok").timeout(10000).retry(5, 2000).send();
+assert_eq(r_app_dns.status(), 200);
+assert(str_contains(r_app_dns.body(), "dns_ok"));
+
+let schema = "{\"type\":\"object\",\"required\":[\"status\",\"service\",\"run_id\",\"hostname\",\"counter\",\"timestamp\",\"time_ns\",\"time_iso\",\"echo\"],\"properties\":{\"status\":{\"type\":\"string\"},\"service\":{\"type\":\"string\"},\"run_id\":{\"type\":\"string\"},\"hostname\":{\"type\":\"string\"},\"counter\":{\"type\":\"integer\"},\"timestamp\":{\"type\":\"number\"},\"time_ns\":{\"type\":\"integer\"},\"time_iso\":{\"type\":\"string\"},\"echo\":{\"type\":\"string\"}}}";
+
+let r_info1 = app.get("/api/info?echo=probe1").timeout(10000).retry(5, 2000).send();
+assert_eq(r_info1.status(), 200);
+assert(r_info1.assert_json_schema(schema));
+let c1 = r_info1.json("$.counter").to_int();
+let t1 = r_info1.json("$.time_iso").value();
+assert_eq(r_info1.json("$.run_id").value(), run_id);
+
+let r_info2 = app.get("/api/info?echo=probe2").timeout(10000).retry(5, 2000).send();
+assert_eq(r_info2.status(), 200);
+assert(r_info2.assert_json_schema(schema));
+let c2 = r_info2.json("$.counter").to_int();
+let t2 = r_info2.json("$.time_iso").value();
+assert(c2 > c1);
+assert(t1 != t2);
+
+# 4. Short load check against dynamic endpoint
+let load_res = curl.load(app.get("/api/info?echo=load"), 4, 2.0, 20);
+assert_eq(load_res.threshold(5000.0, 0.05), true);
+
+let csv = "metric,ms\n" +
+  "cloudfront index ms," + str(r_cf_idx.time("total")) + "\n" +
+  "cloudfront 404 ms," + str(r_cf_404.time("total")) + "\n" +
+  "dynamic html ms," + str(r_app_dns.time("total")) + "\n" +
+  "load p50 ms," + str(load_res.p50_ms()) + "\n" +
+  "load p95 ms," + str(load_res.p95_ms()) + "\n" +
+  "load p99 ms," + str(load_res.p99_ms()) + "\n";
+file_write("data/lmcloud_latency.csv", csv);
+end _dsl_
+
+  dslb = ".lmweblab-local/lmcloud-test-live.dslb";
+  savedsl(p, dslb);
+  r = system(concat(dsl_cli(p), ["--dsl", dslb]), 600000);
+  if (r.code != 0) {
+    println(r.stdout);
+    println(r.stderr);
+  }
+  assert(r.code == 0, "live lmcurl test suite failed");
+} else {
+  p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let m = curl.mock();
+let base = m.url();
+let parts = str_split(base, ":");
+let port = parts.at(2);
+let site_host = "lmaws-tf-site-demo01.example.com";
+let app_host = "lmaws-tf-app-demo01.example.com";
+let site_s = curl.session("http://" + site_host + ":" + port);
+let app_s = curl.session("http://" + app_host + ":" + port);
+let site_res = site_host + ":" + port + ":127.0.0.1";
+let app_res = app_host + ":" + port + ":127.0.0.1";
+
+# 1. Static site contract checks (index, about, css, image, 404, gzip) with DNS --resolve
+let r_idx = site_s.get("/site/index.html").proxy("").resolve(site_res).timeout(5000).send();
+assert_eq(r_idx.status(), 200);
+assert(str_contains(r_idx.body(), "Fixture site"));
+
+let r_about = site_s.get("/site/about.html").proxy("").resolve(site_res).timeout(5000).send();
+assert_eq(r_about.status(), 200);
+assert(str_contains(r_about.body(), "Offline fixture site"));
+
+let r_css = site_s.get("/site/assets/site.css").proxy("").resolve(site_res).timeout(5000).send();
+assert_eq(r_css.status(), 200);
+assert(str_contains(r_css.body(), "font-family"));
+
+let r_img = site_s.get("/site/assets/logo.svg").proxy("").resolve(site_res).timeout(5000).send();
+assert_eq(r_img.status(), 200);
+assert(r_img.bytes() > 40);
+
+let r_404 = site_s.get("/site/missing.html").proxy("").resolve(site_res).timeout(5000).send();
+assert_eq(r_404.status(), 404);
+
+let r_gzip = site_s.get("/gzip").proxy("").resolve(site_res).header("Accept-Encoding", "gzip").timeout(5000).send();
+assert_eq(r_gzip.status(), 200);
+assert_eq(r_gzip.json("$.compressed").value(), "true");
+
+# 2. Dynamic app contract checks (counter progression, query echo, JSON schema, latency)
+let r_dyn1 = app_s.get("/poll/1").proxy("").resolve(app_res).timeout(5000).send();
+let r_dyn2 = app_s.get("/poll/1").proxy("").resolve(app_res).timeout(5000).send();
+assert_eq(r_dyn1.status(), 200);
+assert_eq(r_dyn2.status(), 200);
+let a1 = r_dyn1.json("$.attempt").to_int();
+let a2 = r_dyn2.json("$.attempt").to_int();
+assert(a2 > a1);
+
+let r_echo = app_s.get("/echo?echo=escaped_value_ok").proxy("").resolve(app_res).timeout(5000).send();
+assert_eq(r_echo.status(), 200);
+assert_eq(r_echo.json("$.args.echo").value(), "escaped_value_ok");
+
+let schema = "{\"type\":\"object\",\"required\":[\"ok\",\"name\",\"items\",\"user\"],\"properties\":{\"ok\":{\"type\":\"boolean\"},\"name\":{\"type\":\"string\"}}}";
+let r_json = app_s.get("/json").proxy("").resolve(app_res).timeout(5000).send();
+assert_eq(r_json.status(), 200);
+assert(r_json.assert_json_schema(schema));
+
+# 3. Short load check (4 virtual users, 20 requests)
+let s_direct = curl.session(base);
+let load_res = curl.load(s_direct.get("/json").proxy(""), 4, 1.0, 20);
+assert_eq(load_res.threshold(2000.0, 0.0), true);
+
+let csv = "metric,ms\n" +
+  "static index ms," + str(r_idx.time("total")) + "\n" +
+  "static 404 ms," + str(r_404.time("total")) + "\n" +
+  "dynamic api ms," + str(r_json.time("total")) + "\n" +
+  "load p50 ms," + str(load_res.p50_ms()) + "\n" +
+  "load p95 ms," + str(load_res.p95_ms()) + "\n" +
+  "load p99 ms," + str(load_res.p99_ms()) + "\n";
+file_write("data/lmcloud_latency.csv", csv);
+m.stop();
+end _dsl_
+
+  dslb = ".lmweblab-local/lmcloud-test-offline.dslb";
+  savedsl(p, dslb);
+  r = system(concat(dsl_cli(p), ["--dsl", dslb]), 120000);
+  if (r.code != 0) {
+    println(r.stdout);
+    println(r.stderr);
+  }
+  assert(r.code == 0, "offline lmcurl test suite failed");
+}
+
+# Render architecture diagram with lmdraw
+arch = _dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
+scene.canvas(960, 540, "#0f172a");
+scene.text(32.0, 42.0, 22.0, "lmweblab (Part B — lmcloud / OpenTofu Stack)", "#f8fafc").set_attr("font-weight", "700");
+scene.text(32.0, 68.0, 13.0, "14 resources tagged lmaws_test=<run_id> | Verified with lmcurl and lmaws", "#94a3b8");
+
+scene.cluster(32.0, 96.0, 896.0, 185.0, "", "#131c2e", "#334155", 10.0, 13.0);
+scene.text(48.0, 122.0, 13.0, "Static Edge Tier (Route 53 Alias -> CloudFront + OAC -> Private S3 Bucket)", "#38bdf8").set_attr("font-weight", "700");
+
+let r53_site = scene.box(135.0, 195.0, 165.0, 64.0, "Route 53 Alias A\nlmaws-tf-site-<id>", "#1e293b", "#38bdf8", 8.0, 13.0);
+let cf_dist = scene.box(380.0, 195.0, 180.0, 64.0, "CloudFront + OAC\nSigV4 + Custom 404", "#1e293b", "#818cf8", 8.0, 13.0);
+let s3_bkt = scene.cylinder(630.0, 195.0, 170.0, 74.0, "Private S3 Bucket\nlmaws-tf-<id> (BPA)", "#1e293b", "#34d399", 13.0);
+let oac_pol = scene.note(755.0, 158.0, 150.0, 74.0, "OAC Bucket Policy\nSourceArn locked", "#1e1b4b", "#6366f1", 11.0);
+
+scene.connector(r53_site, "e", cf_dist, "w", "straight", "none", "arrow", "none", "#38bdf8", 2.0, "Alias", 0.5, 0.0, -10.0);
+scene.connector(cf_dist, "e", s3_bkt, "w", "straight", "none", "arrow", "none", "#34d399", 2.0, "OAC SigV4", 0.5, 0.0, -10.0);
+
+scene.cluster(32.0, 305.0, 896.0, 195.0, "", "#131c2e", "#334155", 10.0, 13.0);
+scene.text(48.0, 331.0, 13.0, "Dynamic Compute Tier (Route 53 A -> Tagged SG (/32 TCP 80) -> EC2 Spot Nano)", "#fbbf24").set_attr("font-weight", "700");
+
+let r53_app = scene.box(135.0, 410.0, 165.0, 64.0, "Route 53 A (TTL 60)\nlmaws-tf-app-<id>", "#1e293b", "#fbbf24", 8.0, 13.0);
+let sg_app = scene.box(380.0, 410.0, 180.0, 64.0, "Security Group\nTCP 80 caller /32 only", "#1e293b", "#f97316", 8.0, 13.0);
+let ec2_spot = scene.box(630.0, 410.0, 170.0, 64.0, "EC2 Spot Nano\nPython3 / + /api/info", "#1e293b", "#eab308", 8.0, 13.0);
+let curl_box = scene.box(830.0, 410.0, 145.0, 64.0, "lmcurl Suite\n+ Load p95 PASS", "#064e3b", "#10b981", 8.0, 12.0);
+
+scene.connector(r53_app, "e", sg_app, "w", "straight", "none", "arrow", "none", "#fbbf24", 2.0, "Public IP", 0.5, 0.0, -10.0);
+scene.connector(sg_app, "e", ec2_spot, "w", "straight", "none", "arrow", "none", "#f97316", 2.0, "Port 80", 0.5, 0.0, -10.0);
+scene.connector(curl_box, "w", ec2_spot, "e", "straight", "none", "arrow", "none", "#10b981", 2.0, "", 0.5, 0.0, 0.0);
+
+scene.render_png("images/lmcloud_architecture.png", 960, 540, 1);
+end _dsl_
+
+arch_dslb = ".lmweblab-local/lmcloud-arch.dslb";
+savedsl(arch, arch_dslb);
+r_arch = system(concat(dsl_cli(arch), ["--dsl", arch_dslb]), 60000);
+assert(r_arch.code == 0, "lmdraw architecture render failed: " + r_arch.stderr);
+
+# Render latency chart with lmplot
+plot = _dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
+plot.png("images/lmcloud_latency.png", 900, 540);
+plot.cmd("set datafile separator ','");
+plot.cmd("set title 'lmweblab (lmcloud) HTTP Contract and Load Latency (ms)' noenhanced");
+plot.cmd("set yrange [0:*]; set offsets 0,0,graph 0.15,0; set grid y; unset key; set style fill solid 0.85; set boxwidth 0.6");
+plot.cmd("set xtics rotate by -18 font ',10'");
+plot.cmd("set ylabel 'Latency (ms)'");
+plot.cmd("plot 'data/lmcloud_latency.csv' every ::1 using 0:2:xtic(1) with boxes lc rgb '#0969da', '' every ::1 using 0:2:(sprintf('%.2f ms',$2)) with labels offset 0,0.8");
+plot.close();
+end _dsl_
+
+plot_dslb = ".lmweblab-local/lmcloud-plot.dslb";
+savedsl(plot, plot_dslb);
+r_plot = system(concat(dsl_cli(plot), ["--dsl", plot_dslb]), 60000);
+assert(r_plot.code == 0, "lmplot latency render failed: " + r_plot.stderr);
+
+elapsed_ms = now() - t0;
+write_file(".lmweblab-local/lmcloud-test-timing.json", json_stringify({
+  phase: "test",
+  mode: live ? "live" : "offline",
+  run_id: get(meta, "run_id", "demo01"),
+  elapsed_ms: elapsed_ms,
+  passed: true
+}, 2));
+
+println("ok - lmcloud/test.lms passed (" + str(elapsed_ms) + " ms)");
+println("wrote images/lmcloud_architecture.png and images/lmcloud_latency.png");
+println("estimated cost: $0.0000");

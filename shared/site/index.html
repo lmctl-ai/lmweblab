@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>lmweblab — Static Edge Site</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <h1 id="site-title">lmweblab Static Site</h1>
+    <p class="subtitle">Private S3 + CloudFront Origin Access Control + Route 53 Alias</p>
+    <nav>
+      <a id="nav-home" href="/index.html">Home</a>
+      <a id="nav-about" href="/about.html">About</a>
+    </nav>
+  </header>
+  <main class="content">
+    <section class="card">
+      <h2>Edge Delivery Verification</h2>
+      <p id="edge-summary">Served through CloudFront OAC from a private S3 bucket with Block Public Access enabled.</p>
+      <img id="site-banner" src="/banner.png" alt="lmweblab architecture banner" width="640" height="240">
+    </section>
+  </main>
+  <footer class="site-footer">
+    <small id="footer-marker">lmweblab-static-v1</small>
+  </footer>
+</body>
+</html>

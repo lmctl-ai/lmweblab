@@ -1,0 +1,7 @@
+metric,ms
+static index ms,0.293
+static 404 ms,0.186
+dynamic api ms,0.931
+load p50 ms,0.157661
+load p95 ms,0.251896
+load p99 ms,0.356815

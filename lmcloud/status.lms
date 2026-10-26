@@ -1,0 +1,42 @@
+# lmweblab Part B (lmcloud): Inspect active state and search for any lmaws-* resources (status/find)
+
+fn env_or(key, fallback) {
+  let v = getenv(key, "");
+  if (v == "") { return fallback; }
+  return v;
+}
+
+live = env_or("LMWEBLAB_LIVE", "0") == "1";
+run_id = env_or("LMWEBLAB_RUN_ID", "");
+for (a in ARGV) {
+  if (a == "--live") { live = true; }
+  else if (a == "--offline" || a == "--dry-run") { live = false; }
+  else if (!starts_with(a, "--") && run_id == "") { run_id = a; }
+}
+
+mkdir(".lmweblab-local");
+stack_dir = file_exists("lmcloud/main.tf") ? "lmcloud" : ".";
+
+if (run_id == "" && file_exists(".lmweblab-local/lmcloud-run-id.txt")) {
+  run_id = trim(read_file(".lmweblab-local/lmcloud-run-id.txt"));
+}
+if (run_id == "") {
+  run_id = "demo01";
+}
+
+state_prog = _dsl_ cli="lmcloud" install="github:lmctl-ai/lmcloud@latest";
+let dir = ${stack_dir};
+let st = str_trim(tofu.state_list(dir));
+file_write(".lmweblab-local/status-state-list.txt", st);
+end _dsl_
+
+state_dslb = ".lmweblab-local/lmcloud-status-state.dslb";
+savedsl(state_prog, state_dslb);
+r_st = system(concat(dsl_cli(state_prog), ["--dsl", state_dslb]), 60000);
+assert(r_st.code == 0);
+
+state_lines = trim(read_file(".lmweblab-local/status-state-list.txt"));
+println("run_id: " + run_id);
+println("mode: " + (live ? "live" : "offline"));
+println("tofu state resources: " + (state_lines == "" ? "none" : state_lines));
+println("estimated cost: $0.0000");

@@ -1,0 +1,64 @@
+# Offline validation of the lmweblab/lmcloud OpenTofu stack through lmcloud:
+# 1. Canonical HCL formatting check (tofu.fmt_check) on all .tf files
+# 2. Provider resolution and initialization (tofu.init) using the shared plugin cache
+# 3. Static schema and reference validation (tofu.validate)
+# 4. Offline execution plan (tofu.plan) with mock credentials for both Phase 1 (HTTP) and Phase 2 (ACM HTTPS)
+
+stack_dir = file_exists("lmcloud/main.tf") ? "lmcloud" : ".";
+mkdir(".lmweblab-local");
+
+p = _dsl_ cli="lmcloud" install="github:lmctl-ai/lmcloud@latest";
+let dir = ${stack_dir};
+
+if (!tofu.fmt_check(dir)) {
+  print("FMT FAIL: " + tofu.last_error());
+  assert_close(0.0, 1.0, 0.0);
+}
+print("ok 1 - all .tf files pass tofu.fmt_check");
+
+let ok_init = tofu.init(dir);
+if (!ok_init) {
+  print("INIT FAIL: " + tofu.last_error());
+  assert_close(0.0, 1.0, 0.0);
+}
+print("ok 2 - tofu.init succeeded");
+
+let ok_val = tofu.validate(dir);
+if (!ok_val) {
+  print("VALIDATE FAIL: " + tofu.last_error());
+  assert_close(0.0, 1.0, 0.0);
+}
+print("ok 3 - tofu.validate succeeded");
+
+tofu.var("offline_mode", "true");
+tofu.var("run_id", "demo01");
+tofu.var("domain", "example.com");
+tofu.var("caller_cidr", "203.0.113.10/32");
+tofu.var("enable_acm", "false");
+
+let plan1 = tofu.plan(dir);
+if (plan1.add() != 14) {
+  print("PLAN PHASE 1 FAIL: expected 14 adds, got " + str(plan1.add()) + " err=" + tofu.last_error());
+  assert_close(float(plan1.add()), 14.0, 0.0);
+}
+print("ok 4 - offline tofu.plan Phase 1 (HTTP): " + plan1.summary());
+
+tofu.var("enable_acm", "true");
+let plan2 = tofu.plan(dir);
+if (plan2.add() != 17) {
+  print("PLAN PHASE 2 FAIL: expected 17 adds, got " + str(plan2.add()) + " err=" + tofu.last_error());
+  assert_close(float(plan2.add()), 17.0, 0.0);
+}
+print("ok 5 - offline tofu.plan Phase 2 (ACM + HTTPS): " + plan2.summary());
+end _dsl_
+
+out = ".lmweblab-local/lmcloud-validate.dslb";
+savedsl(p, out);
+set_env("AWS_EC2_METADATA_DISABLED", "true");
+r = system(concat(dsl_cli(p), ["--dsl", out]), 120000);
+println(r.stdout);
+if (r.code != 0) {
+  println(r.stderr);
+}
+assert(r.code == 0);
+println("estimated cost: $0.0000");

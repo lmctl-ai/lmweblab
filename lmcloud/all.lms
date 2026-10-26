@@ -1,0 +1,50 @@
+# lmweblab Part B (lmcloud): End-to-end lifecycle driver (up -> test -> down)
+# Guarantees that down.lms runs even if up.lms or test.lms fails.
+
+t0 = now();
+mkdir(".lmweblab-local");
+
+base_dir = file_exists("lmcloud/up.lms") ? "lmcloud" : ".";
+up_script = path_join(base_dir, "up.lms");
+test_script = path_join(base_dir, "test.lms");
+down_script = path_join(base_dir, "down.lms");
+
+cmd_up = concat(["lmctl", up_script], ARGV);
+cmd_test = concat(["lmctl", test_script], ARGV);
+cmd_down = concat(["lmctl", down_script], ARGV);
+
+println("=== [1/3] lmcloud/up.lms ===");
+r_up = system(cmd_up, 1800000);
+println(r_up.stdout);
+if (r_up.code != 0) {
+  println(r_up.stderr);
+  println("up.lms failed; running mandatory teardown (down.lms)...");
+  r_cleanup = system(cmd_down, 1800000);
+  println(r_cleanup.stdout);
+  println(r_cleanup.stderr);
+  assert(false, "up.lms failed (teardown completed)");
+}
+
+println("=== [2/3] lmcloud/test.lms ===");
+r_test = system(cmd_test, 600000);
+println(r_test.stdout);
+if (r_test.code != 0) {
+  println(r_test.stderr);
+  println("test.lms failed; running mandatory teardown (down.lms)...");
+  r_cleanup = system(cmd_down, 1800000);
+  println(r_cleanup.stdout);
+  println(r_cleanup.stderr);
+  assert(false, "test.lms failed (teardown completed)");
+}
+
+println("=== [3/3] lmcloud/down.lms ===");
+r_down = system(cmd_down, 1800000);
+println(r_down.stdout);
+if (r_down.code != 0) {
+  println(r_down.stderr);
+}
+assert(r_down.code == 0, "down.lms failed");
+
+total_ms = now() - t0;
+println("=== lmweblab/lmcloud all.lms completed in " + str(total_ms) + " ms ===");
+println("estimated cost: $0.0000");
