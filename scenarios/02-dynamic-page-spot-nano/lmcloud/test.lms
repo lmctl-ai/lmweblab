@@ -1,0 +1,220 @@
+# === CONFIG ===
+let REGION = getenv("AWS_REGION", "") != "" ? getenv("AWS_REGION", "") : "us-east-1";
+let DOMAIN = getenv("LMWEBLAB_DOMAIN", "") != "" ? getenv("LMWEBLAB_DOMAIN", "") : "example.com";
+let NAME_PREFIX = "lmaws";
+let SCENARIO_SLUG = "s02";
+let INSTANCE_TYPE = "t4g.nano";
+let HTTP_PORT = 80;
+let REQUEST_TIMEOUT_MS = 10000;
+let RETRY_COUNT = 5;
+let RETRY_DELAY_MS = 2000;
+let LOAD_VUS = 4;
+let LOAD_DURATION_S = "2.0";
+let LOAD_REQUESTS = 20;
+let P95_THRESHOLD_MS = "5000.0";
+let ERROR_RATE_THRESHOLD = "0.05";
+let LIVE_MODE = getenv("LMWEBLAB_LIVE", "0") == "1";
+let DEFAULT_RUN_ID = getenv("LMWEBLAB_RUN_ID", "") != "" ? getenv("LMWEBLAB_RUN_ID", "") : "demo01";
+# === END CONFIG ===
+
+let live = LIVE_MODE;
+for (a in ARGV) {
+  if (a == "--live") { live = true; }
+  if (a == "--offline" || a == "--dry-run") { live = false; }
+}
+
+let stack_dir = file_exists("main.tf") ? "." : "scenarios/02-dynamic-page-spot-nano/lmcloud";
+let state_dir = path_join(stack_dir, ".lmweblab-local");
+mkdir(state_dir);
+mkdir("images");
+mkdir("data");
+
+let meta = {
+  mode: "offline",
+  run_id: DEFAULT_RUN_ID,
+  domain: DOMAIN,
+  app_fqdn: NAME_PREFIX + "-tf-" + SCENARIO_SLUG + "-app-" + DEFAULT_RUN_ID + "." + DOMAIN,
+  app_url: "http://" + NAME_PREFIX + "-tf-" + SCENARIO_SLUG + "-app-" + DEFAULT_RUN_ID + "." + DOMAIN,
+  instance_public_ip: "127.0.0.1"
+};
+
+let meta_path = path_join(state_dir, "stack.json");
+if (file_exists(meta_path)) {
+  meta = merge(meta, json_parse(read_file(meta_path)));
+}
+
+let csv_path = "data/s02_lmcloud_latency.csv";
+let arch_img = "images/s02_lmcloud_architecture.png";
+let plot_img = "images/s02_lmcloud_latency.png";
+let t0 = now();
+
+if (live && get(meta, "mode", "offline") == "live") {
+  let app_url = get(meta, "app_url", "");
+  let app_fqdn = get(meta, "app_fqdn", "");
+  let app_ip = get(meta, "instance_public_ip", "");
+  let run_id = get(meta, "run_id", DEFAULT_RUN_ID);
+  let port_str = str(HTTP_PORT);
+
+  let p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let app_base = ${app_url};
+let app_host = ${app_fqdn};
+let app_ip = ${app_ip};
+let run_id = ${run_id};
+let http_port = ${port_str};
+let timeout_ms = ${REQUEST_TIMEOUT_MS};
+let retries = ${RETRY_COUNT};
+let retry_delay = ${RETRY_DELAY_MS};
+let load_vus = ${LOAD_VUS};
+let load_dur = str_to_float(${LOAD_DURATION_S});
+let load_reqs = ${LOAD_REQUESTS};
+let p95_max = str_to_float(${P95_THRESHOLD_MS});
+let err_max = str_to_float(${ERROR_RATE_THRESHOLD});
+let out_csv = ${csv_path};
+
+let app = curl.session(app_base);
+let r_escaped = app.get("/?echo=%3Cscript%3Ealert(1)%3C/script%3E").resolve(app_host + ":" + http_port + ":" + app_ip).timeout(timeout_ms).retry(retries, retry_delay).send();
+assert_eq(r_escaped.status(), 200);
+assert(str_contains(r_escaped.body(), "lmweblab Dynamic App"));
+assert(str_contains(r_escaped.body(), run_id));
+assert(str_contains(r_escaped.body(), "&lt;script&gt;alert(1)&lt;/script&gt;"));
+assert(!str_contains(r_escaped.body(), "<script>alert(1)</script>"));
+
+let r_dns = app.get("/?echo=dns_ok").timeout(timeout_ms).retry(retries, retry_delay).send();
+assert_eq(r_dns.status(), 200);
+assert(str_contains(r_dns.body(), "dns_ok"));
+
+let schema = "{\"type\":\"object\",\"required\":[\"status\",\"service\",\"run_id\",\"hostname\",\"counter\",\"timestamp\",\"time_ns\",\"time_iso\",\"echo\"],\"properties\":{\"status\":{\"type\":\"string\"},\"service\":{\"type\":\"string\"},\"run_id\":{\"type\":\"string\"},\"hostname\":{\"type\":\"string\"},\"counter\":{\"type\":\"integer\"},\"timestamp\":{\"type\":\"number\"},\"time_ns\":{\"type\":\"integer\"},\"time_iso\":{\"type\":\"string\"},\"echo\":{\"type\":\"string\"}}}";
+
+let r_info1 = app.get("/api/info?echo=probe1").timeout(timeout_ms).retry(retries, retry_delay).send();
+assert_eq(r_info1.status(), 200);
+assert(r_info1.assert_json_schema(schema));
+let c1 = r_info1.json("$.counter").to_int();
+let ns1 = r_info1.json("$.time_ns").to_int();
+
+let r_info2 = app.get("/api/info?echo=probe2").timeout(timeout_ms).retry(retries, retry_delay).send();
+assert_eq(r_info2.status(), 200);
+assert(r_info2.assert_json_schema(schema));
+let c2 = r_info2.json("$.counter").to_int();
+let ns2 = r_info2.json("$.time_ns").to_int();
+assert(c2 > c1);
+assert(ns2 > ns1);
+
+let load_res = curl.load(app.get("/api/info?echo=load"), load_vus, load_dur, load_reqs);
+assert_eq(load_res.threshold(p95_max, err_max), true);
+
+let csv = "metric,ms\n" +
+  "dynamic html ms," + str(r_dns.time("total")) + "\n" +
+  "api/info ms," + str(r_info1.time("total")) + "\n" +
+  "load p50 ms," + str(load_res.p50_ms()) + "\n" +
+  "load p95 ms," + str(load_res.p95_ms()) + "\n" +
+  "load p99 ms," + str(load_res.p99_ms()) + "\n";
+file_write(out_csv, csv);
+end _dsl_
+  let dslb = path_join(state_dir, "test-live.dslb");
+  savedsl(p, dslb);
+  let r = system(concat(dsl_cli(p), ["--dsl", dslb]), 300000);
+  assert(r.code == 0, "scenario 02 live test failed: " + r.stderr);
+} else {
+  let app_host = get(meta, "app_fqdn", NAME_PREFIX + "-tf-" + SCENARIO_SLUG + "-app-demo01." + DOMAIN);
+  let p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let m = curl.mock();
+let base = m.url();
+let parts = str_split(base, ":");
+let port = parts.at(2);
+let app_host = ${app_host};
+let timeout_ms = ${REQUEST_TIMEOUT_MS};
+let load_vus = ${LOAD_VUS};
+let load_dur = str_to_float(${LOAD_DURATION_S});
+let load_reqs = ${LOAD_REQUESTS};
+let p95_max = str_to_float(${P95_THRESHOLD_MS});
+let out_csv = ${csv_path};
+
+let app_s = curl.session("http://" + app_host + ":" + port);
+let app_res = app_host + ":" + port + ":127.0.0.1";
+
+let r_dyn1 = app_s.get("/poll/1").proxy("").resolve(app_res).timeout(timeout_ms).send();
+let r_dyn2 = app_s.get("/poll/1").proxy("").resolve(app_res).timeout(timeout_ms).send();
+assert_eq(r_dyn1.status(), 200);
+assert_eq(r_dyn2.status(), 200);
+assert(r_dyn2.json("$.attempt").to_int() > r_dyn1.json("$.attempt").to_int());
+
+let r_echo = app_s.get("/echo?echo=escaped_value_ok").proxy("").resolve(app_res).timeout(timeout_ms).send();
+assert_eq(r_echo.status(), 200);
+assert_eq(r_echo.json("$.args.echo").value(), "escaped_value_ok");
+
+let schema = "{\"type\":\"object\",\"required\":[\"ok\",\"name\",\"items\",\"user\"],\"properties\":{\"ok\":{\"type\":\"boolean\"},\"name\":{\"type\":\"string\"}}}";
+let r_json = app_s.get("/json").proxy("").resolve(app_res).timeout(timeout_ms).send();
+assert_eq(r_json.status(), 200);
+assert(r_json.assert_json_schema(schema));
+
+let s_direct = curl.session(base);
+let load_res = curl.load(s_direct.get("/json").proxy(""), load_vus, load_dur, load_reqs);
+assert_eq(load_res.threshold(p95_max, 0.0), true);
+
+let csv = "metric,ms\n" +
+  "dynamic html ms," + str(r_echo.time("total")) + "\n" +
+  "api/info ms," + str(r_json.time("total")) + "\n" +
+  "load p50 ms," + str(load_res.p50_ms()) + "\n" +
+  "load p95 ms," + str(load_res.p95_ms()) + "\n" +
+  "load p99 ms," + str(load_res.p99_ms()) + "\n";
+file_write(out_csv, csv);
+m.stop();
+end _dsl_
+  let dslb = path_join(state_dir, "test-offline.dslb");
+  savedsl(p, dslb);
+  let r = system(concat(dsl_cli(p), ["--dsl", dslb]), 60000);
+  assert(r.code == 0, "scenario 02 offline test failed: " + r.stderr);
+}
+
+let port_label = str(HTTP_PORT);
+let vus_label = str(LOAD_VUS);
+let arch = _dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
+let out_png = ${arch_img};
+let prefix = ${NAME_PREFIX};
+let slug = ${SCENARIO_SLUG};
+let inst_type = ${INSTANCE_TYPE};
+let port_str = ${port_label};
+let vus_str = ${vus_label};
+scene.canvas(920, 360, "#0f172a");
+scene.text(32.0, 42.0, 20.0, "Scenario 02: Dynamic Page on EC2 Spot Nano (lmcloud)", "#f8fafc").set_attr("font-weight", "700");
+scene.text(32.0, 68.0, 13.0, "Route 53 A Record -> Tagged Security Group (TCP " + port_str + " caller /32) -> EC2 Spot " + inst_type, "#94a3b8");
+scene.cluster(32.0, 96.0, 856.0, 220.0, "", "#131c2e", "#334155", 10.0, 13.0);
+let r53 = scene.box(130.0, 205.0, 170.0, 68.0, "Route 53 A Record\n" + prefix + "-tf-" + slug + "-app-<id>", "#1e293b", "#fbbf24", 8.0, 13.0);
+let sg = scene.box(385.0, 205.0, 190.0, 68.0, "Security Group\nTCP " + port_str + " caller /32 only", "#1e293b", "#f97316", 8.0, 13.0);
+let ec2 = scene.box(640.0, 205.0, 175.0, 68.0, "EC2 Spot " + inst_type + "\nPython3 / + /api/info", "#1e293b", "#eab308", 8.0, 13.0);
+let curl_b = scene.box(825.0, 205.0, 110.0, 68.0, "lmcurl\n" + vus_str + "-VU Load", "#064e3b", "#10b981", 8.0, 12.0);
+scene.connector(r53, "e", sg, "w", "straight", "none", "arrow", "none", "#fbbf24", 2.0, "Public IP", 0.5, 0.0, -10.0);
+scene.connector(sg, "e", ec2, "w", "straight", "none", "arrow", "none", "#f97316", 2.0, "Port " + port_str, 0.5, 0.0, -10.0);
+scene.connector(curl_b, "w", ec2, "e", "straight", "none", "arrow", "none", "#10b981", 2.0, "", 0.5, 0.0, 0.0);
+scene.render_png(out_png, 920, 360, 1);
+end _dsl_
+let arch_dslb = path_join(state_dir, "arch.dslb");
+savedsl(arch, arch_dslb);
+let r_arch = system(concat(dsl_cli(arch), ["--dsl", arch_dslb]), 60000);
+assert(r_arch.code == 0, "lmdraw render failed: " + r_arch.stderr);
+
+let plot = _dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
+let out_plot = ${plot_img};
+let in_csv = ${csv_path};
+plot.png(out_plot, 860, 480);
+plot.cmd("set datafile separator ','");
+plot.cmd("set title 'Scenario 02 (lmcloud): Dynamic EC2 Spot Nano Latency (ms)' noenhanced");
+plot.cmd("set yrange [0:*]; set offsets 0,0,graph 0.15,0; set grid y; unset key; set style fill solid 0.85; set boxwidth 0.55");
+plot.cmd("set ylabel 'Latency (ms)'");
+plot.cmd("plot '" + in_csv + "' every ::1 using 0:2:xtic(1) with boxes lc rgb '#eab308', '' every ::1 using 0:2:(sprintf('%.2f ms',$2)) with labels offset 0,0.8");
+plot.close();
+end _dsl_
+let plot_dslb = path_join(state_dir, "plot.dslb");
+savedsl(plot, plot_dslb);
+let r_plot = system(concat(dsl_cli(plot), ["--dsl", plot_dslb]), 60000);
+assert(r_plot.code == 0, "lmplot render failed: " + r_plot.stderr);
+
+if (stack_dir != ".") {
+  mkdir(path_join(stack_dir, "images"));
+  write_file(path_join(stack_dir, arch_img), read_file(arch_img));
+  write_file(path_join(stack_dir, plot_img), read_file(plot_img));
+}
+
+let elapsed_ms = now() - t0;
+println("ok - scenario 02 test.lms passed in " + str(elapsed_ms) + " ms");
+println("estimated cost: $0.0000");

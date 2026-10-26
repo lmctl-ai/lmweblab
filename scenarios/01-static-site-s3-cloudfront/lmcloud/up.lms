@@ -1,0 +1,164 @@
+# === CONFIG ===
+let REGION = getenv("AWS_REGION", "") != "" ? getenv("AWS_REGION", "") : "us-east-1";
+let DOMAIN = getenv("LMWEBLAB_DOMAIN", "") != "" ? getenv("LMWEBLAB_DOMAIN", "") : "example.com";
+let NAME_PREFIX = "lmaws";
+let SCENARIO_SLUG = "s01";
+let AWS_PROFILE_NAME = getenv("AWS_PROFILE", "") != "" ? getenv("AWS_PROFILE", "") : "lmaws";
+let HTML_CACHE_SECONDS = 300;
+let ASSET_CACHE_SECONDS = 3600;
+let PRICE_CLASS = "PriceClass_100";
+let DEFAULT_ROOT_OBJECT = "index.html";
+let ERROR_PAGE_PATH = "/404.html";
+let ENABLE_ACM = getenv("LMWEBLAB_ACM", "0") == "1";
+let LIVE_MODE = getenv("LMWEBLAB_LIVE", "0") == "1";
+let DEFAULT_RUN_ID = getenv("LMWEBLAB_RUN_ID", "") != "" ? getenv("LMWEBLAB_RUN_ID", "") : "demo01";
+let APPLY_TIMEOUT_MS = 1200000;
+# === END CONFIG ===
+
+let live = LIVE_MODE;
+let enable_acm = ENABLE_ACM;
+let run_id = DEFAULT_RUN_ID;
+let domain = DOMAIN;
+
+let i = 0;
+while (i < len(ARGV)) {
+  let a = ARGV[i];
+  if (a == "--live") { live = true; }
+  else if (a == "--offline" || a == "--dry-run") { live = false; }
+  else if (a == "--acm" || a == "--phase2") { enable_acm = true; }
+  else if (a == "--run-id" && i + 1 < len(ARGV)) { i = i + 1; run_id = ARGV[i]; }
+  else if (a == "--domain" && i + 1 < len(ARGV)) { i = i + 1; domain = ARGV[i]; }
+  i = i + 1;
+}
+
+let stack_dir = file_exists("main.tf") ? "." : "scenarios/01-static-site-s3-cloudfront/lmcloud";
+let state_dir = path_join(stack_dir, ".lmweblab-local");
+mkdir(state_dir);
+
+assert(REGION == "us-east-1", "REGION must be us-east-1");
+if (live) {
+  assert(AWS_PROFILE_NAME == "lmaws", "Live runs MUST use AWS_PROFILE=lmaws only");
+  assert(domain != "" && domain != "example.com", "Live runs require LMWEBLAB_DOMAIN");
+  set_env("AWS_PROFILE", AWS_PROFILE_NAME);
+  set_env("AWS_DEFAULT_PROFILE", AWS_PROFILE_NAME);
+  set_env("AWS_REGION", REGION);
+  set_env("AWS_DEFAULT_REGION", REGION);
+} else {
+  set_env("AWS_EC2_METADATA_DISABLED", "true");
+}
+
+assert(regex_test(run_id, "^[a-z0-9]{4,16}$"), "run_id must be 4-16 lowercase alphanumeric chars");
+write_file(path_join(state_dir, "run-id.txt"), run_id + "\n");
+
+let offline_str = live ? "false" : "true";
+let acm_str = enable_acm ? "true" : "false";
+let profile_str = live ? AWS_PROFILE_NAME : "";
+let html_cache_str = str(HTML_CACHE_SECONDS);
+let asset_cache_str = str(ASSET_CACHE_SECONDS);
+let meta_path = path_join(state_dir, "stack.json");
+let t0 = now();
+
+let up_prog = _dsl_ cli="lmcloud" install="github:lmctl-ai/lmcloud@latest";
+let dir = ${stack_dir};
+let run_id = ${run_id};
+let name_prefix = ${NAME_PREFIX};
+let scenario_slug = ${SCENARIO_SLUG};
+let domain = ${domain};
+let region = ${REGION};
+let aws_profile = ${profile_str};
+let offline_mode = ${offline_str};
+let enable_acm = ${acm_str};
+let html_cache = ${html_cache_str};
+let asset_cache = ${asset_cache_str};
+let price_class = ${PRICE_CLASS};
+let root_obj = ${DEFAULT_ROOT_OBJECT};
+let err_page = ${ERROR_PAGE_PATH};
+let out_meta = ${meta_path};
+
+if (!tofu.fmt_check(dir)) {
+  print("FMT_ERROR: " + tofu.last_error());
+  assert_close(0.0, 1.0, 0.0);
+}
+if (!tofu.init(dir)) {
+  print("INIT_ERROR: " + tofu.last_error());
+  assert_close(0.0, 1.0, 0.0);
+}
+if (!tofu.validate(dir)) {
+  print("VALIDATE_ERROR: " + tofu.last_error());
+  assert_close(0.0, 1.0, 0.0);
+}
+
+tofu.var("run_id", run_id);
+tofu.var("name_prefix", name_prefix);
+tofu.var("scenario_slug", scenario_slug);
+tofu.var("domain", domain);
+tofu.var("aws_region", region);
+tofu.var("aws_profile", aws_profile);
+tofu.var("offline_mode", offline_mode);
+tofu.var("enable_acm", enable_acm);
+tofu.var("html_cache_seconds", html_cache);
+tofu.var("asset_cache_seconds", asset_cache);
+tofu.var("price_class", price_class);
+tofu.var("default_root_object", root_obj);
+tofu.var("error_page_path", err_page);
+
+let p = tofu.plan(dir);
+if (p.add() <= 0 && offline_mode == "true") {
+  print("PLAN_ERROR: " + tofu.last_error());
+  assert_close(0.0, 1.0, 0.0);
+}
+print("PLAN_SUMMARY: " + p.summary());
+
+if (offline_mode == "false") {
+  if (!tofu.apply(dir)) {
+    print("APPLY_ERROR: " + tofu.last_error());
+    let _ = tofu.destroy(dir);
+    assert_close(0.0, 1.0, 0.0);
+  }
+  let meta_json = "{\n" +
+    "  \"mode\": \"live\",\n" +
+    "  \"enable_acm\": \"" + enable_acm + "\",\n" +
+    "  \"run_id\": \"" + tofu.output(dir, "run_id") + "\",\n" +
+    "  \"domain\": \"" + tofu.output(dir, "domain") + "\",\n" +
+    "  \"bucket_name\": \"" + tofu.output(dir, "bucket_name") + "\",\n" +
+    "  \"oac_id\": \"" + tofu.output(dir, "oac_id") + "\",\n" +
+    "  \"distribution_id\": \"" + tofu.output(dir, "distribution_id") + "\",\n" +
+    "  \"distribution_domain_name\": \"" + tofu.output(dir, "distribution_domain_name") + "\",\n" +
+    "  \"cloudfront_https_url\": \"" + tofu.output(dir, "cloudfront_https_url") + "\",\n" +
+    "  \"site_fqdn\": \"" + tofu.output(dir, "site_fqdn") + "\",\n" +
+    "  \"site_url\": \"" + tofu.output(dir, "site_url") + "\"\n" +
+    "}\n";
+  file_write(out_meta, meta_json);
+} else {
+  let site_fqdn = name_prefix + "-tf-" + scenario_slug + "-site-" + run_id + "." + domain;
+  let meta_json = "{\n" +
+    "  \"mode\": \"offline\",\n" +
+    "  \"enable_acm\": \"" + enable_acm + "\",\n" +
+    "  \"run_id\": \"" + run_id + "\",\n" +
+    "  \"domain\": \"" + domain + "\",\n" +
+    "  \"bucket_name\": \"" + name_prefix + "-tf-" + scenario_slug + "-" + run_id + "\",\n" +
+    "  \"site_fqdn\": \"" + site_fqdn + "\",\n" +
+    "  \"site_url\": \"http://" + site_fqdn + "\",\n" +
+    "  \"planned_add\": " + str(p.add()) + "\n" +
+    "}\n";
+  file_write(out_meta, meta_json);
+}
+end _dsl_
+
+let up_dslb = path_join(state_dir, "up.dslb");
+savedsl(up_prog, up_dslb);
+let r_up = system(concat(dsl_cli(up_prog), ["--dsl", up_dslb]), APPLY_TIMEOUT_MS);
+println(r_up.stdout);
+if (r_up.code != 0) { println(r_up.stderr); }
+assert(r_up.code == 0, "scenario 01 up.lms failed");
+
+let elapsed_ms = now() - t0;
+write_file(path_join(state_dir, "up-timing.json"), json_stringify({
+  scenario: "01-static-site-s3-cloudfront",
+  engine: "lmcloud",
+  mode: live ? "live" : "offline",
+  run_id: run_id,
+  elapsed_ms: elapsed_ms
+}, 2));
+println("ok - scenario 01 up.lms completed in " + str(elapsed_ms) + " ms");
+println("estimated cost: " + (live ? "$0.0005" : "$0.0000"));

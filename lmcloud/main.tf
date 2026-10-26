@@ -247,6 +247,14 @@ resource "aws_security_group" "app" {
     cidr_blocks = [var.caller_cidr]
   }
 
+  egress {
+    description = "Allow outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   tags = merge(local.common_tags, {
     Name = "lmaws-tf-sg-${var.run_id}"
   })

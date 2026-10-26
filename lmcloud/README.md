@@ -40,3 +40,12 @@ lmctl lmcloud/all.lms
 # Live AWS run (requires AWS_PROFILE=lmaws and LMWEBLAB_DOMAIN)
 AWS_PROFILE=lmaws LMWEBLAB_DOMAIN=example.com lmctl lmcloud/all.lms --live
 ```
+
+## Measured Live Runs (`AWS_PROFILE=lmaws`)
+
+| Run ID | Phase | Resources | `up.lms` (`init` / `plan` / `apply`) | `test.lms` (`wait` / `suite`) | Load `p50` / `p95` | `down.lms` (`destroy` / `audit`) | Leftovers | Est. Cost |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `tfp1r2` | Phase 1 (HTTP) | 14 | `232.35 s` (`0.97 s` / `3.51 s` / `227.87 s`) | `3.83 s` (`0.60 s` / `3.07 s`) | `132.04 ms` / `175.37 ms` | `281.03 s` (`276.16 s` / `4.86 s`) | **`0`** | `$0.0040` |
+| `tfp2r2` | Phase 2 (ACM + HTTPS) | 17 | `274.27 s` (`0.86 s` / `3.98 s` / `269.43 s`) | `4.53 s` (`0.52 s` / `3.91 s`) | `129.23 ms` / `177.81 ms` | `328.76 s` (`314.80 s` / `13.96 s`) | **`0`** | `$0.0040` |
+
+See [`../scenarios/COMPARE.md`](../scenarios/COMPARE.md) and [`../scenarios/RESULTS.md`](../scenarios/RESULTS.md) for full engineering notes and scenario catalog results.

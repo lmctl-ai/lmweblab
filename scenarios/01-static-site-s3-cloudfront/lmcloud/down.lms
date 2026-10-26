@@ -1,0 +1,130 @@
+# === CONFIG ===
+let REGION = getenv("AWS_REGION", "") != "" ? getenv("AWS_REGION", "") : "us-east-1";
+let DOMAIN = getenv("LMWEBLAB_DOMAIN", "") != "" ? getenv("LMWEBLAB_DOMAIN", "") : "example.com";
+let NAME_PREFIX = "lmaws";
+let SCENARIO_SLUG = "s01";
+let AWS_PROFILE_NAME = getenv("AWS_PROFILE", "") != "" ? getenv("AWS_PROFILE", "") : "lmaws";
+let ENABLE_ACM = getenv("LMWEBLAB_ACM", "0") == "1";
+let LIVE_MODE = getenv("LMWEBLAB_LIVE", "0") == "1";
+let DEFAULT_RUN_ID = getenv("LMWEBLAB_RUN_ID", "") != "" ? getenv("LMWEBLAB_RUN_ID", "") : "demo01";
+let DESTROY_TIMEOUT_MS = 1500000;
+# === END CONFIG ===
+
+let live = LIVE_MODE;
+let enable_acm = ENABLE_ACM;
+let run_id = DEFAULT_RUN_ID;
+let domain = DOMAIN;
+
+let i = 0;
+while (i < len(ARGV)) {
+  let a = ARGV[i];
+  if (a == "--live") { live = true; }
+  else if (a == "--offline" || a == "--dry-run") { live = false; }
+  else if (a == "--acm" || a == "--phase2") { enable_acm = true; }
+  else if (a == "--run-id" && i + 1 < len(ARGV)) { i = i + 1; run_id = ARGV[i]; }
+  else if (a == "--domain" && i + 1 < len(ARGV)) { i = i + 1; domain = ARGV[i]; }
+  i = i + 1;
+}
+
+let stack_dir = file_exists("main.tf") ? "." : "scenarios/01-static-site-s3-cloudfront/lmcloud";
+let state_dir = path_join(stack_dir, ".lmweblab-local");
+mkdir(state_dir);
+
+let meta_path = path_join(state_dir, "stack.json");
+if (file_exists(meta_path)) {
+  let meta = json_parse(read_file(meta_path));
+  if (run_id == "demo01") { run_id = get(meta, "run_id", run_id); }
+  if (domain == "example.com") { domain = get(meta, "domain", domain); }
+  if (get(meta, "mode", "offline") == "live") { live = true; }
+  if (str(get(meta, "enable_acm", "false")) == "true") { enable_acm = true; }
+}
+
+if (live) {
+  assert(AWS_PROFILE_NAME == "lmaws", "Live teardown MUST use AWS_PROFILE=lmaws only");
+  set_env("AWS_PROFILE", AWS_PROFILE_NAME);
+  set_env("AWS_DEFAULT_PROFILE", AWS_PROFILE_NAME);
+  set_env("AWS_REGION", REGION);
+  set_env("AWS_DEFAULT_REGION", REGION);
+} else {
+  set_env("AWS_EC2_METADATA_DISABLED", "true");
+}
+
+let offline_str = live ? "false" : "true";
+let acm_str = enable_acm ? "true" : "false";
+let profile_str = live ? AWS_PROFILE_NAME : "";
+let t0 = now();
+
+let destroy_prog = _dsl_ cli="lmcloud" install="github:lmctl-ai/lmcloud@latest";
+let dir = ${stack_dir};
+let run_id = ${run_id};
+let name_prefix = ${NAME_PREFIX};
+let scenario_slug = ${SCENARIO_SLUG};
+let domain = ${domain};
+let region = ${REGION};
+let aws_profile = ${profile_str};
+let offline_mode = ${offline_str};
+let enable_acm = ${acm_str};
+
+if (!tofu.init(dir)) {
+  print("INIT_ERROR: " + tofu.last_error());
+  assert_close(0.0, 1.0, 0.0);
+}
+tofu.var("run_id", run_id);
+tofu.var("name_prefix", name_prefix);
+tofu.var("scenario_slug", scenario_slug);
+tofu.var("domain", domain);
+tofu.var("aws_region", region);
+tofu.var("aws_profile", aws_profile);
+tofu.var("offline_mode", offline_mode);
+tofu.var("enable_acm", enable_acm);
+
+if (offline_mode == "false") {
+  if (!tofu.destroy(dir)) {
+    print("DESTROY_ERROR: " + tofu.last_error());
+    assert_close(0.0, 1.0, 0.0);
+  }
+}
+
+let remaining = str_trim(tofu.state_list(dir));
+if (str_len(remaining) != 0) {
+  print("LEFTOVER_STATE_ERROR: " + remaining);
+  assert_close(float(str_len(remaining)), 0.0, 0.0);
+}
+print("TOFU_STATE_EMPTY_OK: 0 resources in state for run_id=" + run_id);
+end _dsl_
+
+let dslb = path_join(state_dir, "down.dslb");
+savedsl(destroy_prog, dslb);
+let r_des = system(concat(dsl_cli(destroy_prog), ["--dsl", dslb]), DESTROY_TIMEOUT_MS);
+println(r_des.stdout);
+if (r_des.code != 0) { println(r_des.stderr); }
+assert(r_des.code == 0, "scenario 01 destroy failed");
+
+let b_file = path_join(state_dir, "audit-buckets.json");
+let audit_prog = _dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let is_live = ${offline_str} == "false";
+let region = ${REGION};
+let out_b = ${b_file};
+if (is_live) {
+  file_write(out_b, aws.region(region).buckets().json());
+} else {
+  file_write(out_b, aws.demo().buckets().json());
+}
+end _dsl_
+let audit_dslb = path_join(state_dir, "audit.dslb");
+savedsl(audit_prog, audit_dslb);
+set_env("LMAWS_LIVE", live ? "1" : "0");
+set_env("LMAWS_MAX_COST_USD", "0.05");
+let r_aud = system(concat(dsl_cli(audit_prog), ["--dsl", audit_dslb]), 120000);
+assert(r_aud.code == 0, "lmaws bucket audit failed: " + r_aud.stderr);
+
+let target_bucket = NAME_PREFIX + "-tf-" + SCENARIO_SLUG + "-" + run_id;
+let buckets_list = json_parse(read_file(b_file));
+for (b in buckets_list) {
+  let b_str = json_stringify(b);
+  assert(!contains(b_str, target_bucket), "Leftover bucket found: " + b_str);
+}
+
+let elapsed_ms = now() - t0;
+println("ok - scenario 01 down.lms verified 0 leftovers for run_id=" + run_id + " (" + str(elapsed_ms) + " ms)");
+println("estimated cost: $0.0000");

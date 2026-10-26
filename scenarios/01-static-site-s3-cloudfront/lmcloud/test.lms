@@ -1,0 +1,217 @@
+# === CONFIG ===
+let REGION = getenv("AWS_REGION", "") != "" ? getenv("AWS_REGION", "") : "us-east-1";
+let DOMAIN = getenv("LMWEBLAB_DOMAIN", "") != "" ? getenv("LMWEBLAB_DOMAIN", "") : "example.com";
+let NAME_PREFIX = "lmaws";
+let SCENARIO_SLUG = "s01";
+let HTML_CACHE_SECONDS = 300;
+let ASSET_CACHE_SECONDS = 3600;
+let DEFAULT_ROOT_OBJECT = "index.html";
+let ERROR_PAGE_PATH = "/404.html";
+let REQUEST_TIMEOUT_MS = 15000;
+let RETRY_COUNT = 5;
+let RETRY_DELAY_MS = 2000;
+let MIN_BANNER_BYTES = 1000;
+let ENABLE_ACM = getenv("LMWEBLAB_ACM", "0") == "1";
+let LIVE_MODE = getenv("LMWEBLAB_LIVE", "0") == "1";
+let DEFAULT_RUN_ID = getenv("LMWEBLAB_RUN_ID", "") != "" ? getenv("LMWEBLAB_RUN_ID", "") : "demo01";
+# === END CONFIG ===
+
+let live = LIVE_MODE;
+for (a in ARGV) {
+  if (a == "--live") { live = true; }
+  if (a == "--offline" || a == "--dry-run") { live = false; }
+}
+
+let stack_dir = file_exists("main.tf") ? "." : "scenarios/01-static-site-s3-cloudfront/lmcloud";
+let state_dir = path_join(stack_dir, ".lmweblab-local");
+mkdir(state_dir);
+mkdir("images");
+mkdir("data");
+
+let meta = {
+  mode: "offline",
+  enable_acm: ENABLE_ACM ? "true" : "false",
+  run_id: DEFAULT_RUN_ID,
+  domain: DOMAIN,
+  site_fqdn: NAME_PREFIX + "-tf-" + SCENARIO_SLUG + "-site-" + DEFAULT_RUN_ID + "." + DOMAIN,
+  site_url: "http://" + NAME_PREFIX + "-tf-" + SCENARIO_SLUG + "-site-" + DEFAULT_RUN_ID + "." + DOMAIN,
+  cloudfront_https_url: "https://d111111abcdef8.cloudfront.net",
+  distribution_domain_name: "d111111abcdef8.cloudfront.net"
+};
+
+let meta_path = path_join(state_dir, "stack.json");
+if (file_exists(meta_path)) {
+  meta = merge(meta, json_parse(read_file(meta_path)));
+}
+
+let csv_path = "data/s01_lmcloud_latency.csv";
+let arch_img = "images/s01_lmcloud_architecture.png";
+let plot_img = "images/s01_lmcloud_latency.png";
+let t0 = now();
+
+if (live && get(meta, "mode", "offline") == "live") {
+  let cf_url = get(meta, "cloudfront_https_url", "");
+  let cf_domain = get(meta, "distribution_domain_name", "");
+  let site_fqdn = get(meta, "site_fqdn", "");
+  let enable_acm = str(get(meta, "enable_acm", "false"));
+
+  let p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let cf_base = ${cf_url};
+let cf_domain = ${cf_domain};
+let site_host = ${site_fqdn};
+let enable_acm = ${enable_acm};
+let timeout_ms = ${REQUEST_TIMEOUT_MS};
+let retries = ${RETRY_COUNT};
+let retry_delay = ${RETRY_DELAY_MS};
+let min_img_bytes = ${MIN_BANNER_BYTES};
+let out_csv = ${csv_path};
+
+let cf = curl.session(cf_base);
+let r_idx = cf.get("/index.html").timeout(timeout_ms).retry(retries, retry_delay).send();
+assert_eq(r_idx.status(), 200);
+assert(str_contains(r_idx.body(), "lmweblab Static Site"));
+assert(str_len(r_idx.header("cache-control")) > 0);
+
+let r_root = cf.get("/").timeout(timeout_ms).retry(retries, retry_delay).send();
+assert_eq(r_root.status(), 200);
+assert(str_contains(r_root.body(), "lmweblab Static Site"));
+
+let r_about = cf.get("/about.html").timeout(timeout_ms).retry(retries, retry_delay).send();
+assert_eq(r_about.status(), 200);
+assert(str_contains(r_about.body(), "About lmweblab"));
+
+let r_css = cf.get("/style.css").header("Accept-Encoding", "gzip").timeout(timeout_ms).retry(retries, retry_delay).send();
+assert_eq(r_css.status(), 200);
+assert(str_contains(r_css.body(), "--accent: #0969da"));
+
+let r_img = cf.get("/banner.png").timeout(timeout_ms).retry(retries, retry_delay).send();
+assert_eq(r_img.status(), 200);
+assert(r_img.bytes() > min_img_bytes);
+
+let r_404 = cf.get("/nonexistent-path-404.html").timeout(timeout_ms).retry(retries, retry_delay).send();
+assert_eq(r_404.status(), 404);
+assert(str_contains(r_404.body(), "404"));
+
+if (enable_acm == "true") {
+  let site_https = curl.session("https://" + site_host);
+  let r_s_idx = site_https.get("/index.html").timeout(timeout_ms).retry(retries, retry_delay).send();
+  assert_eq(r_s_idx.status(), 200);
+  assert(str_contains(r_s_idx.body(), "lmweblab Static Site"));
+  assert(str_contains(str_lower(r_s_idx.certificate()), str_lower(site_host)));
+
+  let site_http = curl.session("http://" + site_host);
+  let r_redir = site_http.get("/index.html").follow(false).timeout(timeout_ms).retry(retries, retry_delay).send();
+  assert_eq(r_redir.status(), 301);
+} else {
+  let site_http = curl.session("http://" + site_host);
+  let r_s_idx = site_http.get("/index.html").header("Host", cf_domain).timeout(timeout_ms).retry(retries, retry_delay).send();
+  assert_eq(r_s_idx.status(), 200);
+  assert(str_contains(r_s_idx.body(), "lmweblab Static Site"));
+}
+
+let csv = "metric,ms\n" +
+  "index.html ms," + str(r_idx.time("total")) + "\n" +
+  "about.html ms," + str(r_about.time("total")) + "\n" +
+  "style.css ms," + str(r_css.time("total")) + "\n" +
+  "banner.png ms," + str(r_img.time("total")) + "\n" +
+  "custom 404 ms," + str(r_404.time("total")) + "\n";
+file_write(out_csv, csv);
+end _dsl_
+  let dslb = path_join(state_dir, "test-live.dslb");
+  savedsl(p, dslb);
+  let r = system(concat(dsl_cli(p), ["--dsl", dslb]), 300000);
+  assert(r.code == 0, "scenario 01 live test failed: " + r.stderr);
+} else {
+  let site_host = get(meta, "site_fqdn", NAME_PREFIX + "-tf-" + SCENARIO_SLUG + "-site-demo01." + DOMAIN);
+  let p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let m = curl.mock();
+let base = m.url();
+let parts = str_split(base, ":");
+let port = parts.at(2);
+let site_host = ${site_host};
+let timeout_ms = ${REQUEST_TIMEOUT_MS};
+let out_csv = ${csv_path};
+
+let site_s = curl.session("http://" + site_host + ":" + port);
+let site_res = site_host + ":" + port + ":127.0.0.1";
+
+let r_idx = site_s.get("/site/index.html").proxy("").resolve(site_res).timeout(timeout_ms).send();
+assert_eq(r_idx.status(), 200);
+assert(str_contains(r_idx.body(), "Fixture site"));
+
+let r_about = site_s.get("/site/about.html").proxy("").resolve(site_res).timeout(timeout_ms).send();
+assert_eq(r_about.status(), 200);
+assert(str_contains(r_about.body(), "Offline fixture site"));
+
+let r_css = site_s.get("/site/assets/site.css").proxy("").resolve(site_res).timeout(timeout_ms).send();
+assert_eq(r_css.status(), 200);
+assert(str_contains(r_css.body(), "font-family"));
+
+let r_img = site_s.get("/site/assets/logo.svg").proxy("").resolve(site_res).timeout(timeout_ms).send();
+assert_eq(r_img.status(), 200);
+assert(r_img.bytes() > 40);
+
+let r_404 = site_s.get("/site/missing.html").proxy("").resolve(site_res).timeout(timeout_ms).send();
+assert_eq(r_404.status(), 404);
+
+let csv = "metric,ms\n" +
+  "index.html ms," + str(r_idx.time("total")) + "\n" +
+  "about.html ms," + str(r_about.time("total")) + "\n" +
+  "style.css ms," + str(r_css.time("total")) + "\n" +
+  "banner.png ms," + str(r_img.time("total")) + "\n" +
+  "custom 404 ms," + str(r_404.time("total")) + "\n";
+file_write(out_csv, csv);
+m.stop();
+end _dsl_
+  let dslb = path_join(state_dir, "test-offline.dslb");
+  savedsl(p, dslb);
+  let r = system(concat(dsl_cli(p), ["--dsl", dslb]), 60000);
+  assert(r.code == 0, "scenario 01 offline test failed: " + r.stderr);
+}
+
+let arch = _dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
+let out_png = ${arch_img};
+let prefix = ${NAME_PREFIX};
+let slug = ${SCENARIO_SLUG};
+scene.canvas(920, 360, "#0f172a");
+scene.text(32.0, 42.0, 20.0, "Scenario 01: Static Site on S3 + CloudFront + OAC (lmcloud)", "#f8fafc").set_attr("font-weight", "700");
+scene.text(32.0, 68.0, 13.0, "Route 53 Alias -> CloudFront Distribution (OAC SigV4 + Custom 404) -> Private S3 Bucket", "#94a3b8");
+scene.cluster(32.0, 96.0, 856.0, 220.0, "", "#131c2e", "#334155", 10.0, 13.0);
+let r53 = scene.box(130.0, 205.0, 170.0, 68.0, "Route 53 Alias A\n" + prefix + "-tf-" + slug + "-site-<id>", "#1e293b", "#38bdf8", 8.0, 13.0);
+let cf = scene.box(385.0, 205.0, 190.0, 68.0, "CloudFront + OAC\nGzip + Custom 404", "#1e293b", "#818cf8", 8.0, 13.0);
+let s3 = scene.cylinder(650.0, 205.0, 180.0, 76.0, "Private S3 Bucket\n" + prefix + "-tf-" + slug + "-<id>", "#1e293b", "#34d399", 13.0);
+let pol = scene.note(790.0, 155.0, 150.0, 70.0, "Block Public Access\n+ OAC SourceArn", "#1e1b4b", "#6366f1", 11.0);
+scene.connector(r53, "e", cf, "w", "straight", "none", "arrow", "none", "#38bdf8", 2.0, "Alias", 0.5, 0.0, -10.0);
+scene.connector(cf, "e", s3, "w", "straight", "none", "arrow", "none", "#34d399", 2.0, "OAC SigV4", 0.5, 0.0, -10.0);
+scene.render_png(out_png, 920, 360, 1);
+end _dsl_
+let arch_dslb = path_join(state_dir, "arch.dslb");
+savedsl(arch, arch_dslb);
+let r_arch = system(concat(dsl_cli(arch), ["--dsl", arch_dslb]), 60000);
+assert(r_arch.code == 0, "lmdraw render failed: " + r_arch.stderr);
+
+let plot = _dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
+let out_plot = ${plot_img};
+let in_csv = ${csv_path};
+plot.png(out_plot, 860, 480);
+plot.cmd("set datafile separator ','");
+plot.cmd("set title 'Scenario 01 (lmcloud): Static Site Asset Latency (ms)' noenhanced");
+plot.cmd("set yrange [0:*]; set offsets 0,0,graph 0.15,0; set grid y; unset key; set style fill solid 0.85; set boxwidth 0.55");
+plot.cmd("set ylabel 'Latency (ms)'");
+plot.cmd("plot '" + in_csv + "' every ::1 using 0:2:xtic(1) with boxes lc rgb '#0969da', '' every ::1 using 0:2:(sprintf('%.2f ms',$2)) with labels offset 0,0.8");
+plot.close();
+end _dsl_
+let plot_dslb = path_join(state_dir, "plot.dslb");
+savedsl(plot, plot_dslb);
+let r_plot = system(concat(dsl_cli(plot), ["--dsl", plot_dslb]), 60000);
+assert(r_plot.code == 0, "lmplot render failed: " + r_plot.stderr);
+
+if (stack_dir != ".") {
+  mkdir(path_join(stack_dir, "images"));
+  write_file(path_join(stack_dir, arch_img), read_file(arch_img));
+  write_file(path_join(stack_dir, plot_img), read_file(plot_img));
+}
+
+let elapsed_ms = now() - t0;
+println("ok - scenario 01 test.lms passed in " + str(elapsed_ms) + " ms");
+println("estimated cost: $0.0000");

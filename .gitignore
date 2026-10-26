@@ -11,6 +11,7 @@
 # Local runtime state, ledgers, and live evidence (never commit live IDs/IPs/zones)
 .lmweblab-local/
 .lmaws-local/
+.omx/
 ledgers/
 reports/
 lmcloud/work/
@@ -28,3 +29,5 @@ data/live-*
 .lmweblab-offline
 .lmweblab-*.dslb
 data/cost-evidence/
+
+/.omx/

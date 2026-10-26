@@ -1,0 +1,6 @@
+metric,ms
+dynamic html ms,0.112
+api/info ms,1.14
+load p50 ms,0.157764
+load p95 ms,3.187852
+load p99 ms,3.266881

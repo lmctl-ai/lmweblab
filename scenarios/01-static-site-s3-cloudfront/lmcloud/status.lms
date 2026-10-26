@@ -1,0 +1,28 @@
+# === CONFIG ===
+let REGION = getenv("AWS_REGION", "") != "" ? getenv("AWS_REGION", "") : "us-east-1";
+let NAME_PREFIX = "lmaws";
+let SCENARIO_SLUG = "s01";
+let DEFAULT_RUN_ID = getenv("LMWEBLAB_RUN_ID", "") != "" ? getenv("LMWEBLAB_RUN_ID", "") : "demo01";
+# === END CONFIG ===
+
+let stack_dir = file_exists("main.tf") ? "." : "scenarios/01-static-site-s3-cloudfront/lmcloud";
+let state_dir = path_join(stack_dir, ".lmweblab-local");
+mkdir(state_dir);
+let st_file = path_join(state_dir, "state-list.txt");
+
+let state_prog = _dsl_ cli="lmcloud" install="github:lmctl-ai/lmcloud@latest";
+let dir = ${stack_dir};
+let out_file = ${st_file};
+file_write(out_file, str_trim(tofu.state_list(dir)));
+end _dsl_
+
+let dslb = path_join(state_dir, "status.dslb");
+savedsl(state_prog, dslb);
+let r = system(concat(dsl_cli(state_prog), ["--dsl", dslb]), 60000);
+assert(r.code == 0);
+let st = trim(read_file(st_file));
+println("scenario: 01-static-site-s3-cloudfront (lmcloud)");
+println("prefix: " + NAME_PREFIX + "-tf-" + SCENARIO_SLUG + "-" + DEFAULT_RUN_ID);
+println("region: " + REGION);
+println("state resources: " + (st == "" ? "none" : st));
+println("estimated cost: $0.0000");

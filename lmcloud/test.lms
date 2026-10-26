@@ -40,24 +40,67 @@ if (file_exists(".lmweblab-local/lmcloud-stack.json")) {
 }
 
 t0 = now();
+dns_and_boot_wait_ms = 0;
+test_suite_ms = 0;
 
 if (live && get(meta, "mode", "offline") == "live") {
   cf_url = get(meta, "cloudfront_https_url", "");
+  cf_domain = get(meta, "distribution_domain_name", "");
   site_url = get(meta, "site_url", "");
   site_fqdn = get(meta, "site_fqdn", "");
   app_url = get(meta, "app_url", "");
   app_fqdn = get(meta, "app_fqdn", "");
   app_ip = get(meta, "instance_public_ip", "");
   run_id = get(meta, "run_id", "");
+  enable_acm = str(get(meta, "enable_acm", "false"));
 
+  # Step 1: Bounded readiness poll for CloudFront + EC2 Spot boot + Route 53 DNS (up to 18 attempts * 10s = 180s)
+  t_wait0 = now();
+  ready_prog = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let cf_base = ${cf_url};
+let app_base = ${app_url};
+let app_host = ${app_fqdn};
+let app_ip = ${app_ip};
+
+let cf = curl.session(cf_base);
+let r_cf = cf.get("/index.html").timeout(10000).retry(5, 2000).send();
+assert_eq(r_cf.status(), 200);
+
+let app = curl.session(app_base);
+let r_app_ip = app.get("/healthz").resolve(app_host + ":80:" + app_ip).timeout(5000).retry(5, 2000).send();
+assert_eq(r_app_ip.status(), 200);
+
+let r_app_dns = app.get("/healthz").timeout(5000).retry(5, 2000).send();
+assert_eq(r_app_dns.status(), 200);
+end _dsl_
+  ready_dslb = ".lmweblab-local/lmcloud-ready.dslb";
+  savedsl(ready_prog, ready_dslb);
+  attempt = 0;
+  is_ready = false;
+  while (attempt < 18 && !is_ready) {
+    attempt = attempt + 1;
+    r_ready = system(concat(dsl_cli(ready_prog), ["--dsl", ready_dslb]), 60000);
+    if (r_ready.code == 0) {
+      is_ready = true;
+    } else {
+      println("waiting for CloudFront + EC2 Spot + Route 53 readiness (attempt " + str(attempt) + "/18)...");
+    }
+  }
+  dns_and_boot_wait_ms = now() - t_wait0;
+  assert(is_ready, "Timed out waiting for CloudFront + EC2 Spot + Route 53 readiness after 18 attempts");
+
+  # Step 2: Live contract & load assertion suite
+  t_suite0 = now();
   p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
 let cf_base = ${cf_url};
+let cf_domain = ${cf_domain};
 let site_base = ${site_url};
 let site_host = ${site_fqdn};
 let app_base = ${app_url};
 let app_host = ${app_fqdn};
 let app_ip = ${app_ip};
 let run_id = ${run_id};
+let enable_acm = ${enable_acm};
 
 # 1. Static site over CloudFront default domain (HTTPS)
 let cf = curl.session(cf_base);
@@ -86,10 +129,59 @@ let r_cf_404 = cf.get("/nonexistent-path-404.html").timeout(15000).retry(5, 2000
 assert_eq(r_cf_404.status(), 404);
 assert(str_contains(r_cf_404.body(), "404"));
 
-# 2. Static site DNS resolution check on Route 53 alias name
-let site_s = curl.session(site_base);
-let r_site_dns = site_s.get("/index.html").timeout(15000).retry(5, 2000).send();
-assert(r_site_dns.status() == 200 || r_site_dns.status() == 403 || r_site_dns.status() == 400);
+# 2. Static site over Route 53 alias record (lmaws-tf-site-<id>.<domain>)
+if (enable_acm == "true") {
+  let site_https = curl.session("https://" + site_host);
+  let r_site_idx = site_https.get("/index.html").timeout(15000).retry(5, 2000).send();
+  assert_eq(r_site_idx.status(), 200);
+  assert(str_contains(r_site_idx.body(), "lmweblab Static Site"));
+  assert(str_len(r_site_idx.header("cache-control")) > 0);
+  let cert_info = r_site_idx.certificate();
+  assert(str_len(cert_info) > 0);
+  assert(str_contains(str_lower(cert_info), str_lower(site_host)));
+
+  let r_site_root = site_https.get("/").timeout(15000).retry(5, 2000).send();
+  assert_eq(r_site_root.status(), 200);
+  assert(str_contains(r_site_root.body(), "lmweblab Static Site"));
+
+  let r_site_about = site_https.get("/about.html").timeout(15000).retry(5, 2000).send();
+  assert_eq(r_site_about.status(), 200);
+  assert(str_contains(r_site_about.body(), "About lmweblab"));
+
+  let r_site_css = site_https.get("/style.css").header("Accept-Encoding", "gzip").timeout(15000).retry(5, 2000).send();
+  assert_eq(r_site_css.status(), 200);
+  assert(str_contains(r_site_css.body(), "--accent: #0969da"));
+
+  let r_site_img = site_https.get("/banner.png").timeout(15000).retry(5, 2000).send();
+  assert_eq(r_site_img.status(), 200);
+  assert(r_site_img.bytes() > 1000);
+
+  let r_site_404 = site_https.get("/nonexistent-path-404.html").timeout(15000).retry(5, 2000).send();
+  assert_eq(r_site_404.status(), 404);
+  assert(str_contains(r_site_404.body(), "404"));
+
+  let site_http = curl.session("http://" + site_host);
+  let r_site_redir = site_http.get("/index.html").follow(false).timeout(15000).retry(5, 2000).send();
+  assert_eq(r_site_redir.status(), 301);
+  assert(str_starts_with(r_site_redir.header("location"), "https://" + site_host));
+
+  let r_site_followed = site_http.get("/index.html").follow(true).timeout(15000).retry(5, 2000).send();
+  assert_eq(r_site_followed.status(), 200);
+  assert(str_contains(r_site_followed.body(), "lmweblab Static Site"));
+} else {
+  let site_http = curl.session("http://" + site_host);
+  let r_site_idx = site_http.get("/index.html").header("Host", cf_domain).timeout(15000).retry(5, 2000).send();
+  assert_eq(r_site_idx.status(), 200);
+  assert(str_contains(r_site_idx.body(), "lmweblab Static Site"));
+
+  let r_site_about = site_http.get("/about.html").header("Host", cf_domain).timeout(15000).retry(5, 2000).send();
+  assert_eq(r_site_about.status(), 200);
+  assert(str_contains(r_site_about.body(), "About lmweblab"));
+
+  let r_site_404 = site_http.get("/nonexistent-path-404.html").header("Host", cf_domain).timeout(15000).retry(5, 2000).send();
+  assert_eq(r_site_404.status(), 404);
+  assert(str_contains(r_site_404.body(), "404"));
+}
 
 # 3. Dynamic page over Route 53 app name + explicit --resolve verification
 let app = curl.session(app_base);
@@ -110,16 +202,16 @@ let r_info1 = app.get("/api/info?echo=probe1").timeout(10000).retry(5, 2000).sen
 assert_eq(r_info1.status(), 200);
 assert(r_info1.assert_json_schema(schema));
 let c1 = r_info1.json("$.counter").to_int();
-let t1 = r_info1.json("$.time_iso").value();
+let ns1 = r_info1.json("$.time_ns").to_int();
 assert_eq(r_info1.json("$.run_id").value(), run_id);
 
 let r_info2 = app.get("/api/info?echo=probe2").timeout(10000).retry(5, 2000).send();
 assert_eq(r_info2.status(), 200);
 assert(r_info2.assert_json_schema(schema));
 let c2 = r_info2.json("$.counter").to_int();
-let t2 = r_info2.json("$.time_iso").value();
+let ns2 = r_info2.json("$.time_ns").to_int();
 assert(c2 > c1);
-assert(t1 != t2);
+assert(ns2 > ns1);
 
 # 4. Short load check against dynamic endpoint
 let load_res = curl.load(app.get("/api/info?echo=load"), 4, 2.0, 20);
@@ -138,6 +230,7 @@ end _dsl_
   dslb = ".lmweblab-local/lmcloud-test-live.dslb";
   savedsl(p, dslb);
   r = system(concat(dsl_cli(p), ["--dsl", dslb]), 600000);
+  test_suite_ms = now() - t_suite0;
   if (r.code != 0) {
     println(r.stdout);
     println(r.stderr);
@@ -283,6 +376,8 @@ write_file(".lmweblab-local/lmcloud-test-timing.json", json_stringify({
   phase: "test",
   mode: live ? "live" : "offline",
   run_id: get(meta, "run_id", "demo01"),
+  dns_and_boot_wait_ms: dns_and_boot_wait_ms,
+  test_suite_ms: test_suite_ms,
   elapsed_ms: elapsed_ms,
   passed: true
 }, 2));

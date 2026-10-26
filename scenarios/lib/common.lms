@@ -1,0 +1,144 @@
+# scenarios/lib/common.lms — Shared helpers for lmweblab scenarios
+# Provides environment/CLI resolution, run_id management, safety assertions, and leftover verification via lmaws.
+
+fn wl_env(key, fallback) {
+  let v = getenv(key, "");
+  if (v == "") { return fallback; }
+  return v;
+}
+
+fn wl_parse_flags(argv, defaults) {
+  let opts = merge({
+    live: wl_env("LMWEBLAB_LIVE", "0") == "1",
+    enable_acm: wl_env("LMWEBLAB_ACM", "0") == "1",
+    run_id: wl_env("LMWEBLAB_RUN_ID", ""),
+    domain: wl_env("LMWEBLAB_DOMAIN", "example.com"),
+    profile: wl_env("AWS_PROFILE", "lmaws"),
+    region: wl_env("AWS_REGION", "us-east-1"),
+    caller_cidr: wl_env("LMWEBLAB_CALLER_CIDR", "")
+  }, defaults);
+  let i = 0;
+  while (i < len(argv)) {
+    let a = argv[i];
+    if (a == "--live") {
+      opts.live = true;
+    } else if (a == "--offline" || a == "--dry-run") {
+      opts.live = false;
+    } else if (a == "--acm" || a == "--phase2") {
+      opts.enable_acm = true;
+    } else if (a == "--run-id" && i + 1 < len(argv)) {
+      i = i + 1;
+      opts.run_id = argv[i];
+    } else if (a == "--domain" && i + 1 < len(argv)) {
+      i = i + 1;
+      opts.domain = argv[i];
+    } else if (a == "--caller-cidr" && i + 1 < len(argv)) {
+      i = i + 1;
+      opts.caller_cidr = argv[i];
+    }
+    i = i + 1;
+  }
+  return opts;
+}
+
+fn wl_resolve_run_id(explicit_id, live, state_dir) {
+  mkdir(state_dir);
+  let id_file = path_join(state_dir, "run-id.txt");
+  let rid = explicit_id;
+  if (rid == "" && file_exists(id_file)) {
+    rid = trim(read_file(id_file));
+  }
+  if (rid == "") {
+    if (live) {
+      let t_str = str(now());
+      rid = "r" + substring(t_str, len(t_str) - 5, len(t_str));
+    } else {
+      rid = "demo01";
+    }
+  }
+  assert(regex_test(rid, "^[a-z0-9]{4,16}$"), "run_id must be 4-16 lowercase alphanumeric chars");
+  write_file(id_file, rid + "\n");
+  return rid;
+}
+
+fn wl_detect_caller_cidr(explicit_cidr, live, state_dir, fallback_cidr) {
+  if (explicit_cidr != "") {
+    assert(ends_with(explicit_cidr, "/32") && explicit_cidr != "0.0.0.0/32", "caller_cidr must be a non-zero /32");
+    return explicit_cidr;
+  }
+  if (!live) {
+    return fallback_cidr;
+  }
+  mkdir(state_dir);
+  let ip_file = path_join(state_dir, "caller-ip.txt");
+  let ip_prog = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let s = curl.session("https://checkip.amazonaws.com");
+let resp = s.get("/").timeout(10000).retry(3, 1000).send();
+assert_eq(resp.status(), 200);
+let ip = str_trim(resp.body());
+file_write(${ip_file}, ip);
+end _dsl_
+  let ip_dslb = path_join(state_dir, "detect-ip.dslb");
+  savedsl(ip_prog, ip_dslb);
+  let r_ip = system(concat(dsl_cli(ip_prog), ["--dsl", ip_dslb]), 30000);
+  assert(r_ip.code == 0, "Failed to detect caller public IP via checkip.amazonaws.com: " + r_ip.stderr);
+  let detected_ip = trim(read_file(ip_file));
+  assert(regex_test(detected_ip, "^[0-9]{1,3}(\\.[0-9]{1,3}){3}$"), "Invalid IPv4 from checkip: " + detected_ip);
+  return detected_ip + "/32";
+}
+
+fn wl_audit_zero_leftovers(live, region, run_id, target_prefix, state_dir) {
+  mkdir(state_dir);
+  let b_file = path_join(state_dir, "audit-buckets.json");
+  let i_file = path_join(state_dir, "audit-instances.json");
+  let s_file = path_join(state_dir, "audit-sgs.json");
+  let live_flag = live ? "true" : "false";
+
+  let audit_prog = _dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let is_live = ${live_flag} == "true";
+if (is_live) {
+  let cloud_live = aws.region(${region});
+  file_write(${b_file}, cloud_live.buckets().json());
+  file_write(${i_file}, cloud_live.instances().json());
+  file_write(${s_file}, cloud_live.security_groups().json());
+} else {
+  let cloud_demo = aws.demo();
+  file_write(${b_file}, cloud_demo.buckets().json());
+  file_write(${i_file}, cloud_demo.instances().json());
+  file_write(${s_file}, cloud_demo.security_groups().json());
+}
+end _dsl_
+  let audit_dslb = path_join(state_dir, "audit.dslb");
+  savedsl(audit_prog, audit_dslb);
+  set_env("LMAWS_LIVE", live ? "1" : "0");
+  set_env("LMAWS_MAX_COST_USD", "0.05");
+  let r_audit = system(concat(dsl_cli(audit_prog), ["--dsl", audit_dslb]), 120000);
+  assert(r_audit.code == 0, "lmaws leftover audit failed: " + r_audit.stderr);
+
+  let buckets_list = json_parse(read_file(b_file));
+  let instances_list = json_parse(read_file(i_file));
+  let sgs_list = json_parse(read_file(s_file));
+  let leftovers = [];
+
+  for (b in buckets_list) {
+    let b_str = json_stringify(b);
+    if (contains(b_str, target_prefix) || contains(b_str, run_id)) {
+      push(leftovers, "bucket:" + b_str);
+    }
+  }
+  for (inst in instances_list) {
+    let i_str = json_stringify(inst);
+    let st = str(get(inst, "state", ""));
+    if (st != "terminated" && (contains(i_str, target_prefix) || contains(i_str, run_id))) {
+      push(leftovers, "instance:" + i_str);
+    }
+  }
+  for (sg in sgs_list) {
+    let sg_str = json_stringify(sg);
+    if (contains(sg_str, target_prefix) || contains(sg_str, run_id)) {
+      push(leftovers, "security_group:" + sg_str);
+    }
+  }
+  assert(len(leftovers) == 0, "Leftover AWS resources found for run_id=" + run_id + ": " + json_stringify(leftovers));
+  return 0;
+}

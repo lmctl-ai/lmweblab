@@ -82,6 +82,7 @@ if (!file_exists(path_join(stack_dir, "../shared/site/banner.png")) && file_exis
 }
 
 # Detect caller public IPv4 /32 via lmcurl when live (or use RFC 5737 test-net in offline mode)
+t_ip0 = now();
 if (opts.caller_cidr == "") {
   if (opts.live) {
     ip_prog = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
@@ -102,6 +103,7 @@ end _dsl_
     opts.caller_cidr = "203.0.113.10/32";
   }
 }
+ip_detect_ms = now() - t_ip0;
 assert(ends_with(opts.caller_cidr, "/32") && opts.caller_cidr != "0.0.0.0/32", "caller_cidr must be a non-zero /32 CIDR");
 
 t0 = now();
@@ -118,15 +120,10 @@ if (opts.live) {
   set_env("AWS_EC2_METADATA_DISABLED", "true");
 }
 
-up_prog = _dsl_ cli="lmcloud" install="github:lmctl-ai/lmcloud@latest";
+# Step 1: fmt_check + init + validate
+t_init0 = now();
+init_prog = _dsl_ cli="lmcloud" install="github:lmctl-ai/lmcloud@latest";
 let dir = ${stack_dir};
-let run_id = ${opts.run_id};
-let domain = ${opts.domain};
-let caller_cidr = ${opts.caller_cidr};
-let instance_type = ${opts.instance_type};
-let offline_mode = ${offline_str};
-let enable_acm = ${acm_str};
-let aws_profile = ${profile_str};
 
 if (!tofu.fmt_check(dir)) {
   print("FMT_ERROR: " + tofu.last_error());
@@ -144,6 +141,30 @@ if (!ok_val) {
   print("VALIDATE_ERROR: " + tofu.last_error());
   assert_close(0.0, 1.0, 0.0);
 }
+print("INIT_VALIDATE_OK");
+end _dsl_
+
+init_dslb = ".lmweblab-local/lmcloud-init.dslb";
+savedsl(init_prog, init_dslb);
+r_init = system(concat(dsl_cli(init_prog), ["--dsl", init_dslb]), 300000);
+init_validate_ms = now() - t_init0;
+println(r_init.stdout);
+if (r_init.code != 0) {
+  println(r_init.stderr);
+}
+assert(r_init.code == 0, "lmcloud init/validate failed");
+
+# Step 2: plan
+t_plan0 = now();
+plan_prog = _dsl_ cli="lmcloud" install="github:lmctl-ai/lmcloud@latest";
+let dir = ${stack_dir};
+let run_id = ${opts.run_id};
+let domain = ${opts.domain};
+let caller_cidr = ${opts.caller_cidr};
+let instance_type = ${opts.instance_type};
+let offline_mode = ${offline_str};
+let enable_acm = ${acm_str};
+let aws_profile = ${profile_str};
 
 tofu.var("run_id", run_id);
 tofu.var("domain", domain);
@@ -160,36 +181,10 @@ if (p.add() <= 0 && offline_mode == "true") {
   assert_close(0.0, 1.0, 0.0);
 }
 print("PLAN_SUMMARY: " + p.summary());
-
-if (offline_mode == "false") {
-  let ok_apply = tofu.apply(dir);
-  if (!ok_apply) {
-    print("APPLY_ERROR: " + tofu.last_error());
-    let _ = tofu.destroy(dir);
-    assert_close(0.0, 1.0, 0.0);
-  }
-  let meta_json = "{\n" +
-    "  \"mode\": \"live\",\n" +
-    "  \"run_id\": \"" + tofu.output(dir, "run_id") + "\",\n" +
-    "  \"domain\": \"" + tofu.output(dir, "domain") + "\",\n" +
-    "  \"bucket_name\": \"" + tofu.output(dir, "bucket_name") + "\",\n" +
-    "  \"oac_id\": \"" + tofu.output(dir, "oac_id") + "\",\n" +
-    "  \"distribution_id\": \"" + tofu.output(dir, "distribution_id") + "\",\n" +
-    "  \"distribution_domain_name\": \"" + tofu.output(dir, "distribution_domain_name") + "\",\n" +
-    "  \"cloudfront_http_url\": \"" + tofu.output(dir, "cloudfront_http_url") + "\",\n" +
-    "  \"cloudfront_https_url\": \"" + tofu.output(dir, "cloudfront_https_url") + "\",\n" +
-    "  \"site_fqdn\": \"" + tofu.output(dir, "site_fqdn") + "\",\n" +
-    "  \"site_url\": \"" + tofu.output(dir, "site_url") + "\",\n" +
-    "  \"app_fqdn\": \"" + tofu.output(dir, "app_fqdn") + "\",\n" +
-    "  \"app_url\": \"" + tofu.output(dir, "app_url") + "\",\n" +
-    "  \"instance_id\": \"" + tofu.output(dir, "instance_id") + "\",\n" +
-    "  \"instance_public_ip\": \"" + tofu.output(dir, "instance_public_ip") + "\",\n" +
-    "  \"security_group_id\": \"" + tofu.output(dir, "security_group_id") + "\"\n" +
-    "}\n";
-  file_write(".lmweblab-local/lmcloud-stack.json", meta_json);
-} else {
+if (offline_mode == "true") {
   let meta_json = "{\n" +
     "  \"mode\": \"offline\",\n" +
+    "  \"enable_acm\": \"" + enable_acm + "\",\n" +
     "  \"run_id\": \"" + run_id + "\",\n" +
     "  \"domain\": \"" + domain + "\",\n" +
     "  \"bucket_name\": \"lmaws-tf-" + run_id + "\",\n" +
@@ -203,20 +198,90 @@ if (offline_mode == "false") {
 }
 end _dsl_
 
-up_dslb = ".lmweblab-local/lmcloud-up.dslb";
-savedsl(up_prog, up_dslb);
-r_up = system(concat(dsl_cli(up_prog), ["--dsl", up_dslb]), 1800000);
-elapsed_ms = now() - t0;
-println(r_up.stdout);
-if (r_up.code != 0) {
-  println(r_up.stderr);
+plan_dslb = ".lmweblab-local/lmcloud-plan.dslb";
+savedsl(plan_prog, plan_dslb);
+r_plan = system(concat(dsl_cli(plan_prog), ["--dsl", plan_dslb]), 300000);
+plan_ms = now() - t_plan0;
+println(r_plan.stdout);
+if (r_plan.code != 0) {
+  println(r_plan.stderr);
 }
-assert(r_up.code == 0, "lmcloud up failed");
+assert(r_plan.code == 0, "lmcloud plan failed");
+
+# Step 3: apply (live mode only)
+apply_ms = 0;
+if (opts.live) {
+  t_apply0 = now();
+  apply_prog = _dsl_ cli="lmcloud" install="github:lmctl-ai/lmcloud@latest";
+let dir = ${stack_dir};
+let run_id = ${opts.run_id};
+let domain = ${opts.domain};
+let caller_cidr = ${opts.caller_cidr};
+let instance_type = ${opts.instance_type};
+let offline_mode = ${offline_str};
+let enable_acm = ${acm_str};
+let aws_profile = ${profile_str};
+
+tofu.var("run_id", run_id);
+tofu.var("domain", domain);
+tofu.var("aws_region", "us-east-1");
+tofu.var("aws_profile", aws_profile);
+tofu.var("caller_cidr", caller_cidr);
+tofu.var("instance_type", instance_type);
+tofu.var("offline_mode", offline_mode);
+tofu.var("enable_acm", enable_acm);
+
+let ok_apply = tofu.apply(dir);
+if (!ok_apply) {
+  print("APPLY_ERROR: " + tofu.last_error());
+  let _ = tofu.destroy(dir);
+  assert_close(0.0, 1.0, 0.0);
+}
+let meta_json = "{\n" +
+  "  \"mode\": \"live\",\n" +
+  "  \"enable_acm\": \"" + enable_acm + "\",\n" +
+  "  \"run_id\": \"" + tofu.output(dir, "run_id") + "\",\n" +
+  "  \"domain\": \"" + tofu.output(dir, "domain") + "\",\n" +
+  "  \"bucket_name\": \"" + tofu.output(dir, "bucket_name") + "\",\n" +
+  "  \"oac_id\": \"" + tofu.output(dir, "oac_id") + "\",\n" +
+  "  \"distribution_id\": \"" + tofu.output(dir, "distribution_id") + "\",\n" +
+  "  \"distribution_domain_name\": \"" + tofu.output(dir, "distribution_domain_name") + "\",\n" +
+  "  \"cloudfront_http_url\": \"" + tofu.output(dir, "cloudfront_http_url") + "\",\n" +
+  "  \"cloudfront_https_url\": \"" + tofu.output(dir, "cloudfront_https_url") + "\",\n" +
+  "  \"site_fqdn\": \"" + tofu.output(dir, "site_fqdn") + "\",\n" +
+  "  \"site_url\": \"" + tofu.output(dir, "site_url") + "\",\n" +
+  "  \"app_fqdn\": \"" + tofu.output(dir, "app_fqdn") + "\",\n" +
+  "  \"app_url\": \"" + tofu.output(dir, "app_url") + "\",\n" +
+  "  \"instance_id\": \"" + tofu.output(dir, "instance_id") + "\",\n" +
+  "  \"instance_public_ip\": \"" + tofu.output(dir, "instance_public_ip") + "\",\n" +
+  "  \"security_group_id\": \"" + tofu.output(dir, "security_group_id") + "\"\n" +
+  "}\n";
+file_write(".lmweblab-local/lmcloud-stack.json", meta_json);
+print("APPLY_OK: run_id=" + run_id);
+end _dsl_
+
+  apply_dslb = ".lmweblab-local/lmcloud-apply.dslb";
+  savedsl(apply_prog, apply_dslb);
+  r_apply = system(concat(dsl_cli(apply_prog), ["--dsl", apply_dslb]), 1500000);
+  apply_ms = now() - t_apply0;
+  println(r_apply.stdout);
+  if (r_apply.code != 0) {
+    println(r_apply.stderr);
+  }
+  assert(r_apply.code == 0, "lmcloud apply failed");
+}
+
+elapsed_ms = now() - t0;
 
 write_file(".lmweblab-local/lmcloud-up-timing.json", json_stringify({
   phase: "up",
   mode: opts.live ? "live" : "offline",
+  enable_acm: opts.enable_acm,
   run_id: opts.run_id,
+  ip_detect_ms: ip_detect_ms,
+  init_validate_ms: init_validate_ms,
+  plan_ms: plan_ms,
+  apply_ms: apply_ms,
   elapsed_ms: elapsed_ms
 }, 2));
 

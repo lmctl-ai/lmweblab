@@ -44,6 +44,7 @@ if (file_exists(".lmweblab-local/lmcloud-stack.json")) {
   if (run_id == "") { run_id = get(meta, "run_id", ""); }
   if (domain == "example.com") { domain = get(meta, "domain", "example.com"); }
   if (get(meta, "mode", "offline") == "live") { live = true; }
+  if (str(get(meta, "enable_acm", "false")) == "true") { enable_acm = true; }
 }
 if (run_id == "" && file_exists(".lmweblab-local/lmcloud-run-id.txt")) {
   run_id = trim(read_file(".lmweblab-local/lmcloud-run-id.txt"));
@@ -103,12 +104,20 @@ if (str_len(remaining) != 0) {
   print("LEFTOVER_STATE_ERROR: " + remaining);
   assert_close(float(str_len(remaining)), 0.0, 0.0);
 }
-print("TOFU_STATE_EMPTY_OK: 0 resources in state for run_id=" + run_id);
+let post_plan = tofu.plan(dir);
+let expected_adds = 14;
+if (enable_acm == "true") {
+  expected_adds = 17;
+}
+assert_close(float(post_plan.add()), float(expected_adds), 0.0);
+print("TOFU_STATE_EMPTY_OK: 0 resources in state for run_id=" + run_id + " (post-destroy plan add=" + str(post_plan.add()) + ")");
 end _dsl_
 
+t_destroy0 = now();
 destroy_dslb = ".lmweblab-local/lmcloud-down.dslb";
 savedsl(destroy_prog, destroy_dslb);
-r_destroy = system(concat(dsl_cli(destroy_prog), ["--dsl", destroy_dslb]), 1800000);
+r_destroy = system(concat(dsl_cli(destroy_prog), ["--dsl", destroy_dslb]), 1500000);
+destroy_ms = now() - t_destroy0;
 println(r_destroy.stdout);
 if (r_destroy.code != 0) {
   println(r_destroy.stderr);
@@ -116,6 +125,7 @@ if (r_destroy.code != 0) {
 assert(r_destroy.code == 0, "lmcloud destroy failed");
 
 # Step 2: Independent leftover verification via lmaws
+t_audit0 = now();
 audit_prog = _dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
 let is_live = ${offline_str} == "false";
 if (is_live) {
@@ -172,12 +182,16 @@ for (sg in sgs_list) {
 }
 
 assert(len(leftovers) == 0, "Leftover AWS resources found for run_id=" + run_id + ": " + json_stringify(leftovers));
+audit_ms = now() - t_audit0;
 
 elapsed_ms = now() - t0;
 write_file(".lmweblab-local/lmcloud-down-timing.json", json_stringify({
   phase: "down",
   mode: live ? "live" : "offline",
+  enable_acm: enable_acm,
   run_id: run_id,
+  destroy_ms: destroy_ms,
+  audit_ms: audit_ms,
   elapsed_ms: elapsed_ms,
   leftovers_count: len(leftovers)
 }, 2));
