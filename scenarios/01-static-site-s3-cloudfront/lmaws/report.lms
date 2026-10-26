@@ -1,0 +1,26 @@
+# === CONFIG ===
+let SCENARIO_TITLE = "Scenario 01: static-site-s3-cloudfront (lmaws)";
+let LEFT_LABEL = "Route 53 / CloudFront";
+let RIGHT_LABEL = "OAC / private S3";
+# === END CONFIG ===
+mkdir("images");mkdir(".lmweblab-local");
+let draw=_dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
+scene.canvas(900,360,"#0f172a");
+scene.text(32.0,42.0,23.0,${SCENARIO_TITLE},"#f8fafc");
+scene.text(32.0,70.0,14.0,"Synthetic architecture / run-scoped names and ownership checks","#94a3b8");
+let a=scene.box(170.0,180.0,220.0,90.0,${LEFT_LABEL},"#1e293b","#38bdf8",10.0,15.0);
+let b=scene.box(590.0,180.0,250.0,90.0,${RIGHT_LABEL},"#1e293b","#34d399",10.0,15.0);
+scene.connector(a,"e",b,"w","straight","none","arrow","none","#38bdf8",2.0,"lmcurl assertions",0.5,0.0,-16.0);
+scene.text(32.0,316.0,14.0,"up -> test -> down / independent inventory must return zero","#cbd5e1");
+scene.render_png("images/architecture.png",900,360,1);
+end _dsl_
+savedsl(draw,".lmweblab-local/draw.dslb");
+let r=system(concat(dsl_cli(draw),["--dsl",".lmweblab-local/draw.dslb"]),120000);assert(r.code==0);
+write_file(".lmweblab-local/synthetic.dat","HTTP 35\nJSON 28\nLoad 42\n");
+let plot=_dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
+plot.png("images/results.png",900,440);
+plot.cmd("set title 'Synthetic fixture latencies (not live measurements)'; set ylabel 'milliseconds'; set yrange [0:50]; set grid ytics; set style data histograms; set style fill solid 0.8; set boxwidth 0.7");
+plot.cmd("plot '.lmweblab-local/synthetic.dat' using 2:xtic(1) lc rgb '#38bdf8' notitle");plot.close();
+end _dsl_
+savedsl(plot,".lmweblab-local/plot.dslb");
+r=system(concat(dsl_cli(plot),["--dsl",".lmweblab-local/plot.dslb"]),120000);assert(r.code==0);
