@@ -1,0 +1,39 @@
+# lmweblab dynamic EC2 HTTP contract. HTTP is performed by lmcurl.
+# Live: LMWEBLAB_DYNAMIC_URL=http://lmaws-app-<run>.<domain>.
+# Offline: create `.lmweblab-offline` to validate the contract runner against lmcurl mock JSON.
+mkdir("reports");
+p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let offline="0";if(file_exists(".lmweblab-offline")){offline="1";}
+let base="";if(file_exists(".lmweblab-dynamic-url")){base=file_read(".lmweblab-dynamic-url");}
+let mock=curl.mock();
+if(offline=="1"){base=mock.url();}else{assert(base!="");}
+let s=curl.session(base);
+let first_path="/index.html?echo=%3Cescaped%3E";let second_path="/index.html?echo=second";let api_path="/api/info?echo=%3Ctag%3E";
+if(offline=="1"){first_path="/json";second_path="/json";api_path="/json";}
+let first=s.get(first_path).proxy("").retry(3,5).timeout(10000).send();
+assert_eq(first.status(),200);
+let second=s.get(second_path).proxy("").send();
+assert_eq(second.status(),200);
+let api=s.get(api_path).proxy("").send();
+assert_eq(api.status(),200);
+let api2=s.get(api_path).proxy("").send();
+assert_eq(api2.status(),200);
+if(offline=="1"){
+  assert(str_contains(api.body(),"ok"));
+}else{
+  assert(str_contains(first.body(),"counter"));
+  assert(str_contains(first.body(),"&lt;escaped&gt;"));
+  assert(api.assert_json_schema("{\"type\":\"object\",\"required\":[\"status\",\"run_id\",\"hostname\",\"counter\",\"time_iso\",\"echo\"]}"));
+  assert(api.json("$.counter").to_int() > 0);
+  assert(api2.json("$.counter").to_int() > api.json("$.counter").to_int());
+  assert(api2.json("$.time_ns").to_int() > api.json("$.time_ns").to_int());
+  assert(api.json("$.echo").value()=="<tag>");
+}
+file_write("reports/dynamic-contract.csv","offline,"+offline+"\nfirst_status,"+str(first.status())+"\nsecond_status,"+str(second.status())+"\napi_status,"+str(api.status())+"\nfirst_bytes,"+str(first.bytes())+"\napi_bytes,"+str(api.bytes())+"\n");
+mock.stop();
+println("dynamic contract passed");
+end _dsl_
+savedsl(p,".lmweblab-dynamic.dslb");
+r = system ${dsl_cli(p)} --dsl .lmweblab-dynamic.dslb;
+if(r.code!=0){println(r.stdout);println(r.stderr);}
+assert(r.code==0);

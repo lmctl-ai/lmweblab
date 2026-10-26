@@ -1,0 +1,13 @@
+# Attach the validated certificate and enforce HTTPS after phase-one HTTP tests.
+import "./common.lms";
+let o = options(ARGV);
+configure_live(o);
+let p = _dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let cloud = aws.example("web_stack_phase2");
+check(cloud.is_demo() == ${!o.live});
+let web = cloud.web_stack(${o.run_id}, ${o.domain}, ".lmweblab-local/lmaws-web-state-" + ${o.run_id} + ".json");
+let result = web.step("https", "{\"run_id\":\"" + ${o.run_id} + "\"}");
+end _dsl_
+savedsl(p, ".lmweblab-local/lmaws-phase2.dslb");
+let r = system(concat(dsl_cli(p), concat(o.live ? ["--live","--profile","lmaws","--region","us-east-1"] : ["--dry-run"], ["--dsl", ".lmweblab-local/lmaws-phase2.dslb"])), 1500000);
+println(r.stdout); if (r.code != 0) { println(r.stderr); assert(false, "phase2 HTTPS step failed"); }

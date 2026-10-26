@@ -1,0 +1,39 @@
+# lmweblab static HTTP contract. HTTP is performed by lmcurl.
+# Live: LMWEBLAB_STATIC_URL=https://lmaws-site-<run>.<domain>.
+# Offline: create `.lmweblab-offline` to use lmcurl's loopback mock explicitly.
+mkdir("reports");
+p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let offline="0";if(file_exists(".lmweblab-offline")){offline="1";}
+let base="";if(file_exists(".lmweblab-static-url")){base=file_read(".lmweblab-static-url");}
+let alias="";if(file_exists(".lmweblab-static-alias-url")){alias=file_read(".lmweblab-static-alias-url");}
+let mock=curl.mock();
+if(offline=="1"){base=mock.url();alias=base;}
+if(offline!="1"){assert(base!="");assert(alias!="");}
+let s=curl.session(base);
+let home_path="/index.html";let about_path="/about.html";let css_path="/style.css";
+let image_path="/banner.png";let missing_path="/lmweblab-missing-page";
+if(offline=="1"){home_path="/site/index.html";about_path="/site/about.html";css_path="/site/assets/site.css";image_path="/site/assets/logo.svg";missing_path="/site/lmweblab-missing-page";}
+let home=s.get(home_path).proxy("").retry(5,250).timeout(10000).send();
+assert_eq(home.status(),200);
+let about=s.get(about_path).proxy("").retry(5,250).timeout(10000).send();
+assert_eq(about.status(),200);
+let css=s.get(css_path).proxy("").send();
+assert_eq(css.status(),200);
+let image=s.get(image_path).proxy("").send();
+assert_eq(image.status(),200);
+let missing=s.get(missing_path).proxy("").send();
+assert_eq(missing.status(),404);
+let body=home.body();
+if(offline=="1"){assert(str_contains(body,"Fixture site"));}else{assert(str_contains(body,"lmweblab"));assert(str_contains(body,"site-banner"));}
+if(offline!="1"){assert(home.header("content-type")!="");assert(home.header("cache-control")!="");}
+if(offline!="1"){assert(str_contains(css.header("content-type"),"text/css"));assert(str_contains(image.header("content-type"),"image/"));}
+let alias_home=curl.session(alias).get(home_path).proxy("").retry(5,250).timeout(10000).send();assert_eq(alias_home.status(),200);
+if(offline!="1"){assert(str_contains(alias_home.body(),"lmweblab"));}
+file_write("reports/static-contract.csv","offline,"+offline+"\nhome_status,"+str(home.status())+"\nabout_status,"+str(about.status())+"\ncss_status,"+str(css.status())+"\nmissing_status,"+str(missing.status())+"\nhome_bytes,"+str(home.bytes())+"\n");
+mock.stop();
+println("static contract passed");
+end _dsl_
+savedsl(p,".lmweblab-static.dslb");
+r = system ${dsl_cli(p)} --dsl .lmweblab-static.dslb;
+if(r.code!=0){println(r.stdout);println(r.stderr);}
+assert(r.code==0);

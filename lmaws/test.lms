@@ -1,0 +1,30 @@
+# Test both static CloudFront endpoints and the dynamic EC2 endpoint through lmcurl.
+import "./common.lms";
+let o = options(ARGV);
+configure_live(o);
+assert(file_exists(".lmweblab-local/lmaws-stack.json"), "run up first");
+let mode = "--offline";
+if (o.live) {
+  mode = "--live";
+  let state=json_parse(read_file(".lmweblab-local/lmaws-web-state-"+o.run_id+".json"));
+  let scheme=get(state,"https","")=="true" ? "https://" : "http://";
+  write_file(".lmweblab-static-url", scheme+state.cf_domain);
+  write_file(".lmweblab-static-alias-url",scheme+state.site);
+  write_file(".lmweblab-cf-url", scheme+state.cf_domain);
+  write_file(".lmweblab-dynamic-url", "http://"+state.app);
+} else { write_file(".lmweblab-offline", "1\n"); }
+let test_static = system(["lmctl", "shared/tests/static_contract.lms", mode], 600000);
+let test_dynamic = system(["lmctl", "shared/tests/dynamic_contract.lms", mode], 600000);
+let load = system(["lmctl", "shared/tests/load_check.lms", mode], 600000);
+for (check in [test_static,test_dynamic,load]) {if(check.code!=0){println(check.stdout);println(check.stderr);}}
+if(test_static.code!=0 || test_dynamic.code!=0 || load.code!=0){let recovery=system(["lmctl","lmaws/down.lms","--run-id",o.run_id,"--live"],1500000);println(recovery.stdout);assert(false,"lmcurl contract suite failed; recovery attempted");}
+if (!o.live && file_exists(".lmweblab-offline")) { remove_file(".lmweblab-offline"); }
+let p = _dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let cloud = aws.example("web_stack_test");
+check(cloud.is_demo() == ${!o.live});
+let web = cloud.web_stack(${o.run_id}, ${o.domain}, ".lmweblab-local/lmaws-web-state-" + ${o.run_id} + ".json");
+let result = web.status();
+end _dsl_
+savedsl(p, ".lmweblab-local/lmaws-test.dslb");
+let r = system(concat(dsl_cli(p), concat(o.live ? ["--live","--profile","lmaws","--region","us-east-1"] : ["--dry-run"], ["--dsl", ".lmweblab-local/lmaws-test.dslb"])), 900000);
+println(r.stdout); if (r.code != 0) { println(r.stderr); assert(false, "web stack test failed"); }

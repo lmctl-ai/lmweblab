@@ -1,0 +1,62 @@
+# lmaws web stack driver: up | test | down | status | all.
+#
+# Offline is deterministic and safe. Add --live only after setting AWS_PROFILE=lmaws,
+# LMWEBLAB_DOMAIN, and LMWEBLAB_LIVE=1. Every live failure invokes down.
+let command = "all";
+let forwarded = [];
+let phase2 = false;
+let i = 0;
+while (i < len(ARGV)) {
+  let arg = ARGV[i];
+  if (arg == "up" || arg == "test" || arg == "down" || arg == "status" || arg == "all") { command = arg; }
+  else { if (arg == "--phase2") { phase2 = true; } push(forwarded, arg); }
+  i = i + 1;
+}
+let root = "lmaws/";
+let phase_run_id = getenv("LMWEBLAB_RUN_ID", "cafe01");
+let phase_domain = getenv("LMWEBLAB_DOMAIN", "example.com");
+if (file_exists(".lmweblab-local/lmaws-run-id.txt") && phase_run_id == "") { phase_run_id = trim(read_file(".lmweblab-local/lmaws-run-id.txt")); }
+let target = root + command + ".lms";
+if (command == "all") {
+  let up = system(concat(["lmctl", root + "up.lms"], forwarded), 1500000);
+  println(up.stdout);
+  if (up.code != 0) {
+    println(up.stderr);
+    let down_on_up_failure = system(concat(["lmctl", root + "down.lms"], forwarded), 1500000);
+    println(down_on_up_failure.stdout);
+    assert(false, "web stack up failed; teardown attempted");
+  }
+  let test = system(concat(["lmctl", root + "test.lms"], forwarded), 900000);
+  println(test.stdout);
+  if (test.code != 0) {
+    println(test.stderr);
+    let down_on_test_failure = system(concat(["lmctl", root + "down.lms"], forwarded), 1500000);
+    println(down_on_test_failure.stdout);
+    assert(false, "web stack test failed; teardown attempted");
+  }
+  if (phase2) {
+    let p2r=system(concat(["lmctl",root+"phase2.lms"],forwarded),1500000);
+    println(p2r.stdout);
+    if (p2r.code != 0) {
+      println(p2r.stderr);
+      let down_on_phase2_failure = system(concat(["lmctl", root + "down.lms"], forwarded), 1500000);
+      println(down_on_phase2_failure.stdout);
+      assert(false, "phase2 HTTPS failed; teardown attempted");
+    }
+    let test2 = system(concat(["lmctl", root + "test.lms"], forwarded), 900000);
+    println(test2.stdout);
+    if (test2.code != 0) {
+      println(test2.stderr);
+      let down_on_test2_failure = system(concat(["lmctl", root + "down.lms"], forwarded), 1500000);
+      println(down_on_test2_failure.stdout);
+      assert(false, "phase2 test failed; teardown attempted");
+    }
+  }
+  let down = system(concat(["lmctl", root + "down.lms"], forwarded), 1500000);
+  println(down.stdout);
+  if (down.code != 0) { println(down.stderr); assert(false, "web stack teardown failed"); }
+} else {
+  let r = system(concat(["lmctl", target], forwarded), 1500000);
+  println(r.stdout);
+  if (r.code != 0) { println(r.stderr); assert(false, "web stack command failed"); }
+}

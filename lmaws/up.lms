@@ -1,0 +1,37 @@
+# Provision the lmaws web stack. Offline is the default and never contacts AWS.
+import "./common.lms";
+let o = options(ARGV);
+configure_live(o);
+if (o.live && o.cidr == "") {
+  let ip = system(["lmctl", "lmaws/caller_ip.lms"], 30000);
+  if (ip.code != 0) { println(ip.stderr); assert(false, "caller IP detection failed"); }
+  o.cidr = trim(read_file(".lmweblab-local/caller-ip.txt")) + "/32";
+}
+save_options(o);
+let p = _dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let cloud = aws.example("web_stack_up");
+check(cloud.is_demo() == ${!o.live});
+let web = cloud.web_stack(${o.run_id}, ${o.domain}, ".lmweblab-local/lmaws-web-state-" + ${o.run_id} + ".json");
+let result = web.step("bucket", "{\"run_id\":\"" + ${o.run_id} + "\",\"live\":" + str(${o.live}) + "}");
+let dist = web.step("distribution", "{\"run_id\":\"" + ${o.run_id} + "\"}");
+let cert = web.step("certificate", "{\"run_id\":\"" + ${o.run_id} + "\",\"domain\":\"" + ${o.domain} + "\"}");
+let dns_site = web.step("dns_site", "{\"run_id\":\"" + ${o.run_id} + "\",\"domain\":\"" + ${o.domain} + "\"}");
+let vpc_id = ${o.vpc_id}; let subnet_id = ${o.subnet_id}; let ami = ${o.ami};
+if (vpc_id == "" || subnet_id == "") {
+  let subs = cloud.subnets(); let j = 0;
+  while (j < subs.len() && subnet_id == "") {
+    let candidate = subs.at(j);
+    if (candidate.get("map_public_ip") == "true" && candidate.get("fleet") != "true") { subnet_id = candidate.get("id"); vpc_id = candidate.get("vpc"); }
+    j = j + 1;
+  }
+}
+if (ami == "") { ami = cloud.public_parameter("/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64"); }
+let compute = web.step("compute", "{\"run_id\":\"" + ${o.run_id} + "\",\"cidr\":\"" + ${o.cidr} + "\",\"vpc_id\":\"" + vpc_id + "\",\"subnet_id\":\"" + subnet_id + "\",\"ami\":\"" + ami + "\",\"user_data\":\"" + ${o.user_data} + "\",\"site_dir\":\"" + ${o.site_dir} + "\"}");
+let dns_app = web.step("dns_app", "{\"run_id\":\"" + ${o.run_id} + "\",\"domain\":\"" + ${o.domain} + "\"}");
+let summary = web.status();
+end _dsl_
+savedsl(p, ".lmweblab-local/lmaws-up.dslb");
+let r = system(concat(dsl_cli(p), concat(o.live ? ["--live","--profile","lmaws","--region","us-east-1"] : ["--dry-run"], ["--dsl", ".lmweblab-local/lmaws-up.dslb"])), 1500000);
+println(r.stdout); if (r.code != 0) { println(r.stderr); assert(false, "web stack up failed"); }
+let mode = "offline"; if (o.live) { mode = "live"; }
+write_file(".lmweblab-local/lmaws-stack.json", json_stringify({run_id:o.run_id,domain:o.domain,mode:mode}, 2));

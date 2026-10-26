@@ -1,0 +1,43 @@
+# Offline synthetic picture report for the lmaws web stack.
+# Run: lmctl https://raw.githubusercontent.com/lmctl-ai/lmweblab/main/lmaws/report.lms
+mkdir("images"); mkdir("reports");
+
+let draw = _dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
+scene.canvas(900, 420, "#0f172a");
+scene.text(32.0, 42.0, 24.0, "lmweblab · lmaws web stack", "#e2e8f0");
+scene.text(32.0, 68.0, 13.0, "Synthetic offline architecture · every resource carries lmaws_test=<run>", "#94a3b8");
+let dns = scene.box(120.0, 160.0, 150.0, 72.0, "Route 53\nlmaws-site-*", "#1e293b", "#38bdf8", 10.0, 14.0);
+let cf = scene.box(270.0, 120.0, 170.0, 72.0, "CloudFront\nOAC + ACM", "#1e293b", "#818cf8", 10.0, 14.0);
+let bucket = scene.cylinder(550.0, 110.0, 150.0, 90.0, "Private S3\nstatic site", "#1e293b", "#34d399", 14.0);
+let ec2 = scene.box(270.0, 270.0, 170.0, 72.0, "EC2 Spot nano\nPython dynamic app", "#1e293b", "#fbbf24", 10.0, 14.0);
+let curl = scene.box(550.0, 270.0, 150.0, 72.0, "lmcurl\nHTTP + p95", "#1e293b", "#f472b6", 10.0, 14.0);
+scene.connector(dns, "e", cf, "w", "elbow", "none", "arrow", "none", "#38bdf8", 2.0, "", 0.5, 0.0, 0.0);
+scene.connector(cf, "e", bucket, "w", "straight", "none", "arrow", "none", "#34d399", 2.0, "", 0.5, 0.0, 0.0);
+scene.connector(dns, "e", ec2, "w", "elbow", "none", "arrow", "none", "#fbbf24", 2.0, "", 0.5, 0.0, 0.0);
+scene.connector(curl, "w", ec2, "e", "straight", "none", "arrow", "none", "#f472b6", 2.0, "", 0.5, 0.0, 0.0);
+scene.render_png("images/lmaws_architecture.png", 900, 420, 1);
+end _dsl_
+savedsl(draw, ".lmweblab-local/lmaws-report-draw.dslb");
+let dr = system(concat(dsl_cli(draw), ["--dsl", ".lmweblab-local/lmaws-report-draw.dslb"]), 120000);
+assert(dr.code == 0, "architecture rendering failed");
+
+write_file("reports/lmaws-timings.dat", "DNS_boot 2.4\nHTTP_suite 1.1\nteardown 0.8\n");
+let plot = _dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
+plot.png("images/lmaws_latency.png", 900, 520);
+plot.cmd("set termoption noenhanced");
+plot.cmd("set title 'Synthetic offline phase timings'");
+plot.cmd("set xlabel 'phase'");
+plot.cmd("set ylabel 'seconds'");
+plot.cmd("set style data histograms");
+plot.cmd("set style fill solid 0.8");
+plot.cmd("set boxwidth 0.7");
+plot.cmd("set grid ytics");
+plot.cmd("set yrange [0:2.6]");
+plot.cmd("plot 'reports/lmaws-timings.dat' using 2:xtic(1) lc rgb '#38bdf8' notitle");
+plot.close();
+end _dsl_
+savedsl(plot, ".lmweblab-local/lmaws-report-plot.dslb");
+let pr = system(concat(dsl_cli(plot), ["--dsl", ".lmweblab-local/lmaws-report-plot.dslb"]), 120000);
+if (pr.code != 0) { println(pr.stderr); assert(false, "latency rendering failed"); }
+write_file("reports/lmaws-synthetic-timings.csv", "phase,seconds\nDNS + boot,2.4\nHTTP suite,1.1\nteardown,0.8\n");
+println("wrote images/lmaws_architecture.png and images/lmaws_latency.png (synthetic only)");

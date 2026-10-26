@@ -1,0 +1,50 @@
+# Shared argument and safety helpers for the lmaws implementation.
+fn env_or(key, fallback) {
+  let value = getenv(key, "");
+  if (value == "") { return fallback; }
+  return value;
+}
+
+fn options(argv) {
+  let result = {live: env_or("LMWEBLAB_LIVE", "0") == "1", acm: env_or("LMWEBLAB_ACM", "0") == "1", run_id: env_or("LMWEBLAB_RUN_ID", ""), domain: env_or("LMWEBLAB_DOMAIN", "example.com"), profile: env_or("AWS_PROFILE", "lmaws"), region: env_or("AWS_REGION", "us-east-1"), cidr: env_or("LMWEBLAB_CALLER_CIDR", ""), vpc_id: env_or("LMWEBLAB_VPC_ID", ""), subnet_id: env_or("LMWEBLAB_SUBNET_ID", ""), ami: env_or("LMWEBLAB_AMI_ID", ""), user_data: env_or("LMWEBLAB_USER_DATA", "shared/userdata/user_data.sh"), site_dir: env_or("LMWEBLAB_SITE_DIR", "shared/site")};
+  let i = 0;
+  while (i < len(argv)) {
+    let arg = argv[i];
+    if (arg == "--live") { result.live = true; }
+    else if (arg == "--offline" || arg == "--dry-run") { result.live = false; }
+    else if (arg == "--acm" || arg == "--phase2") { result.acm = true; }
+    else if (arg == "--run-id" && i + 1 < len(argv)) { i = i + 1; result.run_id = argv[i]; }
+    else if (arg == "--domain" && i + 1 < len(argv)) { i = i + 1; result.domain = argv[i]; }
+    else if (arg == "--caller-cidr" && i + 1 < len(argv)) { i = i + 1; result.cidr = argv[i]; }
+    else if(regex_test(arg,"^[0-9a-f]{4,32}$")){result.run_id=arg;}
+    i = i + 1;
+  }
+  if (result.run_id == "" && file_exists(".lmweblab-local/lmaws-run-id.txt")) {
+    let prior = trim(read_file(".lmweblab-local/lmaws-run-id.txt"));
+    if (regex_test(prior, "^[0-9a-f]{4,32}$")) { result.run_id = prior; }
+  }
+  if (result.run_id == "") { result.run_id = result.live ? substring(str(now()), 0, 8) : "cafe01"; }
+  assert(regex_test(result.run_id, "^[0-9a-f]{4,32}$"), "run id must be 4-32 hexadecimal characters");
+  assert(result.region == "us-east-1", "lmweblab is restricted to us-east-1");
+  if (result.cidr == "" && !result.live) { result.cidr = "203.0.113.10/32"; }
+  if (result.cidr != "") { assert(ends_with(result.cidr, "/32"), "caller CIDR must be an IPv4 /32"); }
+  if (result.live) {
+    assert(result.profile == "lmaws", "live lmweblab runs require AWS_PROFILE=lmaws");
+    assert(result.domain != "example.com", "live runs require LMWEBLAB_DOMAIN");
+  }
+  return result;
+}
+
+fn save_options(o) {
+  mkdir(".lmweblab-local");
+  write_file(".lmweblab-local/lmaws-options.json", json_stringify(o, 2));
+  write_file(".lmweblab-local/lmaws-run-id.txt", o.run_id + "\n");
+}
+
+fn configure_live(o) {
+  if (o.live) {
+    set_env("AWS_PROFILE", "lmaws"); set_env("AWS_DEFAULT_PROFILE", "lmaws");
+    set_env("AWS_REGION", "us-east-1"); set_env("AWS_DEFAULT_REGION", "us-east-1");
+    set_env("LMAWS_LIVE", "1"); set_env("LMAWS_MAX_COST_USD", "0.10");
+  } else { set_env("LMAWS_LIVE", "0"); set_env("AWS_EC2_METADATA_DISABLED", "true"); }
+}

@@ -2,6 +2,7 @@
 set -euxo pipefail
 
 RUN_ID="__RUN_ID__"
+PORT="${LMWEBLAB_PORT:-80}"
 
 cat >/usr/local/bin/lmweblab_server.py <<'PYEOF'
 #!/usr/bin/env python3
@@ -16,6 +17,7 @@ import time
 import urllib.parse
 
 RUN_ID = os.environ.get("LMWEBLAB_RUN_ID", "__RUN_ID__")
+PORT = int(os.environ.get("LMWEBLAB_PORT", "80"))
 HOSTNAME = socket.gethostname()
 COUNTER_LOCK = threading.Lock()
 REQUEST_COUNTER = 0
@@ -70,13 +72,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "timestamp": now_ts,
                 "time_ns": now_ns,
                 "time_iso": now_iso,
-                "echo": escaped_echo,
+                # JSON carries the original value; HTML output escapes it at the sink.
+                "echo": raw_echo,
             }
             payload = json.dumps(body_obj).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(payload)))
+            self.send_header("X-LMWeblab-Request-Count", str(count))
             self.end_headers()
             self.wfile.write(payload)
             return
@@ -103,6 +107,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(payload)))
+            self.send_header("X-LMWeblab-Request-Count", str(count))
             self.end_headers()
             self.wfile.write(payload)
             return
@@ -116,7 +121,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server = http.server.ThreadingHTTPServer(("0.0.0.0", 80), Handler)
+    server = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     server.serve_forever()
 PYEOF
 
@@ -132,6 +137,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 Environment=LMWEBLAB_RUN_ID=${RUN_ID}
+Environment=LMWEBLAB_PORT=${PORT}
 ExecStart=/usr/bin/python3 /usr/local/bin/lmweblab_server.py
 Restart=always
 RestartSec=1

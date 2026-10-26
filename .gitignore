@@ -22,3 +22,9 @@ lmaws/live-*
 evidence/live-*
 reports/live-*
 data/live-*
+
+# Private HTTP targets and local compiled contract runners.
+.lmweblab-*-url
+.lmweblab-offline
+.lmweblab-*.dslb
+data/cost-evidence/
