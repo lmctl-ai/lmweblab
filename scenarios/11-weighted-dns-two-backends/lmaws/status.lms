@@ -5,8 +5,11 @@ let NAME_PREFIX = "lmaws";
 let INSTANCE_TYPE = "t4g.nano";
 let REQUEST_TIMEOUT_MS = 10000;
 let SAMPLES_PER_STEP = 20;
+let FIRST_STATIC_WEIGHT = 90;
+let MIDDLE_STATIC_WEIGHT = 50;
+let FINAL_STATIC_WEIGHT = 0;
 let COST_CAP_USD = "0.10";
 let ENABLE_HTTPS = getenv("LMWEBLAB_ACM", "0") == "1";
 # === END CONFIG ===
 import "../../lib/lmaws.lms";
-scenario_run("11", "status", {region:REGION, domain:DOMAIN, prefix:NAME_PREFIX, instance_type:INSTANCE_TYPE, timeout:REQUEST_TIMEOUT_MS, samples:SAMPLES_PER_STEP, cap:COST_CAP_USD, https:ENABLE_HTTPS}, ARGV);
+scenario_run("11", "status", {region:REGION, domain:DOMAIN, prefix:NAME_PREFIX, instance_type:INSTANCE_TYPE, timeout:REQUEST_TIMEOUT_MS, samples:SAMPLES_PER_STEP, first_weight:FIRST_STATIC_WEIGHT, middle_weight:MIDDLE_STATIC_WEIGHT, final_weight:FINAL_STATIC_WEIGHT, cap:COST_CAP_USD, https:ENABLE_HTTPS}, ARGV);

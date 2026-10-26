@@ -1,5 +1,7 @@
 # Import-only lmaws engine helpers. State, receipts and HTTP targets remain private.
 fn sa_exec(p, o, name, timeout_ms) {
+  let host_version=system(concat(dsl_cli(p),["--version"]),30000);
+  assert(host_version.code==0&&regex_test(host_version.stdout,"0\\.1\\.(1[6-9]|[2-9][0-9])"),"lmaws >=0.1.16 required; remove older PATH executable or supply current host");
   let code=".lmweblab-local/"+name+".dslb"; savedsl(p,code);
   let flags=o.live?["--live","--profile","lmaws","--region",o.region]:["--dry-run"];
   let command=concat(dsl_cli(p),concat(flags,["--dsl",code]));
@@ -70,7 +72,7 @@ end _dsl_
     sa_exec(compute,o,"compute",600000);
     sa_step(o,"dns_app",{});
   }
-  if(o.scenario=="11"){sa_step(o,"dns_weighted",{static_weight:90,dynamic_weight:10});}
+  if(o.scenario=="11"){sa_step(o,"dns_weighted",{static_weight:o.first_weight,dynamic_weight:100-o.first_weight});}
 }
 fn sa_contract(o,script) {
   let r=system(["lmctl",o.root+"/shared/tests/"+script+".lms",o.live?"--live":"--offline"],600000);
@@ -105,7 +107,8 @@ end _dsl_
 fn scenario_run(number,action,config,argv) {
   let o=merge(config,{scenario:number,live:getenv("LMWEBLAB_LIVE","0")=="1",run_id:getenv("LMWEBLAB_RUN_ID",""),root:"../../.."});
   let i=0;while(i<len(argv)){
-    if(argv[i]=="--live"){o.live=true;}
+    if(argv[i]=="--config"&&i+1<len(argv)){i=i+1;o=merge(o,json_parse(read_file(argv[i])));}
+    else if(argv[i]=="--live"){o.live=true;}
     else if(argv[i]=="--offline"||argv[i]=="--dry-run"){o.live=false;}
     else if(argv[i]=="--acm"||argv[i]=="--phase2"){o.https=true;}
     else if(argv[i]=="--run-id"&&i+1<len(argv)){i=i+1;o.run_id=argv[i];}
@@ -113,6 +116,8 @@ fn scenario_run(number,action,config,argv) {
     i=i+1;
   }
   assert(file_exists(o.root+"/shared/site/index.html"),"Run from this scenario's lmaws directory");
+  assert(o.samples>=20&&o.samples<=100,"samples must be 20..100");
+  assert(num(o.cap)>0&&num(o.cap)<=0.25,"cost cap must be within host ceiling");
   assert(o.region=="us-east-1"&&o.prefix=="lmaws","session scope requires lmaws / us-east-1");
   assert(!o.live||getenv("AWS_PROFILE","")=="lmaws","live scenarios require AWS_PROFILE=lmaws only");
   assert(!o.live||o.domain!="example.com","set LMWEBLAB_DOMAIN for live DNS");
@@ -136,7 +141,8 @@ end _dsl_
   } else {
     # Child-process errors are collected before guaranteed cleanup; no assert can skip down.
     let flag=o.live?"--live":"--offline";
-    let args=[flag,"--run-id",o.run_id,"--domain",o.domain];if(o.https){push(args,"--acm");}
+    write_file(".lmweblab-local/effective-config.json",json_stringify(o));
+    let args=[flag,"--config",".lmweblab-local/effective-config.json","--run-id",o.run_id,"--domain",o.domain];if(o.https){push(args,"--acm");}
     let up=system(concat(["lmctl","up.lms"],args),2400000);
     let test={code:1};if(up.code==0){test=system(concat(["lmctl","test.lms"],args),600000);}
     let down=system(concat(["lmctl","down.lms"],args),2400000);
@@ -149,7 +155,7 @@ end _dsl_
 }
 fn sa_weighted_test(o,state) {
   let results=[];let step=0;
-  for(weight in [90,50,0]) {
+  for(weight in [o.first_weight,o.middle_weight,o.final_weight]) {
     step=step+1;
     if(step>1){sa_step(o,"dns_weighted",{static_weight:weight,dynamic_weight:100-weight});}
     let fqdn="lmaws-weighted-"+o.run_id+"."+o.domain;
