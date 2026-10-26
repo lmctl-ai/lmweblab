@@ -12,6 +12,9 @@ while (i < len(ARGV)) {
   else { if (arg == "--phase2") { phase2 = true; } push(forwarded, arg); }
   i = i + 1;
 }
+if((command=="all" || command=="up") && getenv("LMWEBLAB_RUN_ID","")=="" && !contains(forwarded,"--run-id")) {
+  let fresh=regex_replace(str(now()),"[^0-9]","","g");push(forwarded,"--run-id");push(forwarded,substr(fresh,0,13));
+}
 let root = "lmaws/";
 let phase_run_id = getenv("LMWEBLAB_RUN_ID", "cafe01");
 let phase_domain = getenv("LMWEBLAB_DOMAIN", "example.com");

@@ -31,3 +31,6 @@ data/live-*
 data/cost-evidence/
 
 /.omx/
+
+__pycache__/
+*.pyc

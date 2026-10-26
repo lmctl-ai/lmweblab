@@ -1,0 +1,34 @@
+# Importable per-step recipes. Importing this file makes no AWS or HTTP calls.
+# Access: Write only with the lmaws profile; status remains read-only.
+# Preview: call web_recipe with live=false; all provider operations use fixtures.
+# Run the complete bounded lifecycle with lmctl lmaws/web_stack.lms all --offline.
+fn web_recipe(o, operation, settings) {
+  assert(regex_test(o.run_id,"^[0-9a-f]{4,32}$"));
+  assert(!o.live || o.profile=="lmaws");
+  mkdir(".lmweblab-local");
+  let encoded=json_stringify(settings);
+  let state_path=".lmweblab-local/lmaws-web-state-"+o.run_id+".json";
+  let result_path=".lmweblab-local/result-"+o.run_id+"-"+operation+".json";
+  let program=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let cloud=aws.example("web_recipe");check(cloud.is_demo()==${!o.live});
+let web=cloud.web_stack(${o.run_id},${o.domain},${state_path});
+let result=web.step(${operation},${encoded});
+file_write(${result_path},web.status().json());
+end _dsl_
+  let code_path=".lmweblab-local/recipe-"+o.run_id+"-"+operation+".dslb";
+  savedsl(program,code_path);
+  let flags=o.live ? ["--live","--profile","lmaws","--region","us-east-1"]:["--dry-run"];
+  let command=concat(dsl_cli(program),concat(flags,["--dsl",code_path]));
+  if(getenv("OS","")!="Windows_NT"){command=concat(["env","LMAWS_MAX_COST_USD=0.10","LMAWS_LEDGER_DIR=.lmweblab-local/ledgers","LMAWS_EVIDENCE_DIR=.lmweblab-local/evidence"],command);}
+  let result=system(command,1800000);
+  assert(result.code==0,"web recipe failed; native cleanup attempted; inspect private state");
+  return json_parse(read_file(result_path))[0];
+}
+fn web_bucket(o,site_dir) {return web_recipe(o,"bucket",{site_dir:site_dir});}
+fn web_distribution(o) {return web_recipe(o,"distribution",{});}
+fn web_certificate(o) {return web_recipe(o,"certificate",{});}
+fn web_site_dns(o) {return web_recipe(o,"dns_site",{});}
+fn web_compute(o,settings) {return web_recipe(o,"compute",settings);}
+fn web_app_dns(o) {return web_recipe(o,"dns_app",{});}
+fn web_https(o) {return web_recipe(o,"https",{});}
+fn web_invalidate(o) {return web_recipe(o,"invalidate",{});}

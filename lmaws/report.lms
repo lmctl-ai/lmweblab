@@ -1,11 +1,11 @@
 # Offline synthetic picture report for the lmaws web stack.
 # Run: lmctl https://raw.githubusercontent.com/lmctl-ai/lmweblab/main/lmaws/report.lms
-mkdir("images"); mkdir("reports");
+mkdir("images"); mkdir("reports"); mkdir(".lmweblab-local");
 
 let draw = _dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
 scene.canvas(900, 420, "#0f172a");
 scene.text(32.0, 42.0, 24.0, "lmweblab · lmaws web stack", "#e2e8f0");
-scene.text(32.0, 68.0, 13.0, "Synthetic offline architecture · every resource carries lmaws_test=<run>", "#94a3b8");
+scene.text(32.0, 68.0, 13.0, "Synthetic offline architecture · tagged resources plus run-scoped DNS / OAC", "#94a3b8");
 let dns = scene.box(120.0, 160.0, 150.0, 72.0, "Route 53\nlmaws-site-*", "#1e293b", "#38bdf8", 10.0, 14.0);
 let cf = scene.box(270.0, 120.0, 170.0, 72.0, "CloudFront\nOAC + ACM", "#1e293b", "#818cf8", 10.0, 14.0);
 let bucket = scene.cylinder(550.0, 110.0, 150.0, 90.0, "Private S3\nstatic site", "#1e293b", "#34d399", 14.0);

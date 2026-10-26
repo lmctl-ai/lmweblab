@@ -1,0 +1,9 @@
+# Credential-free proof that the import-only per-step recipes compose across host invocations.
+import "./recipes/steps.lms";
+let o={run_id:"fa1101",domain:"example.com",live:false,profile:"lmaws"};
+assert(web_bucket(o,"shared/site").demo=="true");
+web_distribution(o);web_certificate(o);web_site_dns(o);
+web_compute(o,{cidr:"203.0.113.10/32"});web_app_dns(o);web_https(o);
+let cleanup=system(["lmctl","lmaws/down.lms","--offline","--run-id",o.run_id],120000);
+assert(cleanup.code==0,"fixture recipe cleanup failed");
+println("PASS importable per-step recipes and teardown; AWS untouched");

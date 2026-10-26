@@ -9,5 +9,5 @@ let web = cloud.web_stack(${o.run_id}, ${o.domain}, ".lmweblab-local/lmaws-web-s
 let result = web.step("https", "{\"run_id\":\"" + ${o.run_id} + "\"}");
 end _dsl_
 savedsl(p, ".lmweblab-local/lmaws-phase2.dslb");
-let r = system(concat(dsl_cli(p), concat(o.live ? ["--live","--profile","lmaws","--region","us-east-1"] : ["--dry-run"], ["--dsl", ".lmweblab-local/lmaws-phase2.dslb"])), 1500000);
+let r=lmaws_execute(p,o,".lmweblab-local/lmaws-phase2.dslb",1500000);
 println(r.stdout); if (r.code != 0) { println(r.stderr); assert(false, "phase2 HTTPS step failed"); }

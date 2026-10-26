@@ -2,7 +2,7 @@
 mkdir(".lmweblab-local");
 let p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
 let s = curl.session("https://checkip.amazonaws.com");
-let r = s.get("/").retry(3,1000).timeout(10000).send();
+let r = s.get("/").proxy("").retry(3,1000).timeout(10000).send();
 assert_eq(r.status(), 200);
 file_write(".lmweblab-local/caller-ip.txt", str_trim(r.body()) + "\n");
 end _dsl_

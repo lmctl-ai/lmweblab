@@ -11,5 +11,5 @@ let web = cloud.web_stack(${run_id}, ${o.domain}, ".lmweblab-local/lmaws-web-sta
 let result = web.down();
 end _dsl_
 savedsl(p, ".lmweblab-local/lmaws-down.dslb");
-let r = system(concat(dsl_cli(p), concat(o.live ? ["--live","--profile","lmaws","--region","us-east-1"] : ["--dry-run"], ["--dsl", ".lmweblab-local/lmaws-down.dslb"])), 1500000);
+let r=lmaws_execute(p,o,".lmweblab-local/lmaws-down.dslb",1500000);
 println(r.stdout); if (r.code != 0) { println(r.stderr); assert(false, "web stack down failed"); }

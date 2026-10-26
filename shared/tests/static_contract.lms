@@ -2,8 +2,9 @@
 # Live: LMWEBLAB_STATIC_URL=https://lmaws-site-<run>.<domain>.
 # Offline: create `.lmweblab-offline` to use lmcurl's loopback mock explicitly.
 mkdir("reports");
+let fixture_mode=contains(ARGV,"--offline") || (!contains(ARGV,"--live") && file_exists(".lmweblab-offline"));
 p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
-let offline="0";if(file_exists(".lmweblab-offline")){offline="1";}
+let offline=${fixture_mode ? "1":"0"};
 let base="";if(file_exists(".lmweblab-static-url")){base=file_read(".lmweblab-static-url");}
 let alias="";if(file_exists(".lmweblab-static-alias-url")){alias=file_read(".lmweblab-static-alias-url");}
 let mock=curl.mock();
@@ -17,7 +18,7 @@ let home=s.get(home_path).proxy("").retry(5,250).timeout(10000).send();
 assert_eq(home.status(),200);
 let about=s.get(about_path).proxy("").retry(5,250).timeout(10000).send();
 assert_eq(about.status(),200);
-let css=s.get(css_path).proxy("").send();
+let css=s.get(css_path).header("Accept-Encoding","gzip").proxy("").send();
 assert_eq(css.status(),200);
 let image=s.get(image_path).proxy("").send();
 assert_eq(image.status(),200);
@@ -27,13 +28,24 @@ let body=home.body();
 if(offline=="1"){assert(str_contains(body,"Fixture site"));}else{assert(str_contains(body,"lmweblab"));assert(str_contains(body,"site-banner"));}
 if(offline!="1"){assert(home.header("content-type")!="");assert(home.header("cache-control")!="");}
 if(offline!="1"){assert(str_contains(css.header("content-type"),"text/css"));assert(str_contains(image.header("content-type"),"image/"));}
+let http_requests=home.attempts()+about.attempts()+css.attempts()+image.attempts()+missing.attempts();
+let http_bytes=home.bytes()+about.bytes()+css.bytes()+image.bytes()+missing.bytes();
 let alias_home=curl.session(alias).get(home_path).proxy("").retry(5,250).timeout(10000).send();assert_eq(alias_home.status(),200);
-if(offline!="1"){assert(str_contains(alias_home.body(),"lmweblab"));}
-file_write("reports/static-contract.csv","offline,"+offline+"\nhome_status,"+str(home.status())+"\nabout_status,"+str(about.status())+"\ncss_status,"+str(css.status())+"\nmissing_status,"+str(missing.status())+"\nhome_bytes,"+str(home.bytes())+"\n");
+http_requests=http_requests+alias_home.attempts();http_bytes=http_bytes+alias_home.bytes();
+if(offline!="1"){
+ assert(str_contains(alias_home.body(),"lmweblab"));assert(image.bytes()>1000);
+ let compressed=s.get(home_path).header("Accept-Encoding","gzip").proxy("").retry(5,1000).send();
+ assert_eq(compressed.status(),200);assert(str_contains(compressed.body(),"lmweblab"));
+ assert(compressed.header("x-cache")!="");
+ http_requests=http_requests+compressed.attempts();http_bytes=http_bytes+compressed.bytes();
+ # CloudFront compresses eligible responses of at least 1000 bytes; content encoding can vary during the initial cache fill.
+}
+
+file_write("reports/static-contract.csv","requests,"+str(http_requests)+"\nbytes_bound,"+str(http_bytes)+"\noffline,"+offline+"\nhome_status,"+str(home.status())+"\nabout_status,"+str(about.status())+"\ncss_status,"+str(css.status())+"\nmissing_status,"+str(missing.status())+"\nhome_bytes,"+str(home.bytes())+"\n");
 mock.stop();
 println("static contract passed");
 end _dsl_
 savedsl(p,".lmweblab-static.dslb");
 r = system ${dsl_cli(p)} --dsl .lmweblab-static.dslb;
-if(r.code!=0){println(r.stdout);println(r.stderr);}
+if(r.code!=0){mkdir(".lmweblab-local");write_file(".lmweblab-local/static_contract-error.log",r.stdout+"\n"+r.stderr);println(r.stdout);println(r.stderr);}
 assert(r.code==0);

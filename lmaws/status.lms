@@ -1,14 +1,19 @@
-# Read-only status and account-wide search for this run's lmaws resources.
+# Read-only provider inventory; works while an up/down writer holds its run-state lock.
 import "./common.lms";
-let o = options(ARGV);
-configure_live(o);
-let p = _dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
-let cloud = aws.example("web_stack_status");
-check(cloud.is_demo() == ${!o.live});
-let web = cloud.web_stack(${o.run_id}, ${o.domain}, ".lmweblab-local/lmaws-web-state-" + ${o.run_id} + ".json");
-let rows = web.status();
+let o=options(ARGV);configure_live(o);mkdir(".lmweblab-local");
+let snapshot=".lmweblab-local/lmaws-web-state-"+o.run_id+".json";
+if(file_exists(snapshot)) {
+ let state=json_parse(read_file(snapshot));
+ println(json_stringify({status:get(state,"status","new"),step:get(state,"intent","idle"),demo:get(state,"demo","")}));
+}
+let p=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let cloud=aws.example("web_stack_status");check(cloud.is_demo()==${!o.live});
+let rows=cloud.web_find(${o.run_id},${o.domain});
 rows.csv(".lmweblab-local/lmaws-status.csv");
+file_write(".lmweblab-local/lmaws-status-resources.json",rows.json());
 end _dsl_
-savedsl(p, ".lmweblab-local/lmaws-status.dslb");
-let r = system(concat(dsl_cli(p), concat(o.live ? ["--live","--profile","lmaws","--region","us-east-1"] : ["--dry-run"], ["--dsl", ".lmweblab-local/lmaws-status.dslb"])), 300000);
-println(r.stdout); if (r.code != 0) { println(r.stderr); assert(false, "web stack status failed"); }
+savedsl(p,".lmweblab-local/lmaws-status.dslb");
+let flags=o.live?["--live","--profile","lmaws","--region","us-east-1"]:["--dry-run"];
+let r=lmaws_execute(p,o,".lmweblab-local/lmaws-status.dslb",120000);
+assert(r.code==0,"provider status failed; absence was not proven");
+println("Matching run resources:",len(json_parse(read_file(".lmweblab-local/lmaws-status-resources.json"))));

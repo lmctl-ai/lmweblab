@@ -2,8 +2,10 @@
 # Live: LMWEBLAB_DYNAMIC_URL=http://lmaws-app-<run>.<domain>.
 # Offline: create `.lmweblab-offline` to validate the contract runner against lmcurl mock JSON.
 mkdir("reports");
+let fixture_mode=contains(ARGV,"--offline") || (!contains(ARGV,"--live") && file_exists(".lmweblab-offline"));
+let expected_run=getenv("LMWEBLAB_RUN_ID","");
 p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
-let offline="0";if(file_exists(".lmweblab-offline")){offline="1";}
+let offline=${fixture_mode ? "1":"0"};
 let base="";if(file_exists(".lmweblab-dynamic-url")){base=file_read(".lmweblab-dynamic-url");}
 let mock=curl.mock();
 if(offline=="1"){base=mock.url();}else{assert(base!="");}
@@ -23,17 +25,19 @@ if(offline=="1"){
 }else{
   assert(str_contains(first.body(),"counter"));
   assert(str_contains(first.body(),"&lt;escaped&gt;"));
-  assert(api.assert_json_schema("{\"type\":\"object\",\"required\":[\"status\",\"run_id\",\"hostname\",\"counter\",\"time_iso\",\"echo\"]}"));
+  assert(api.assert_json_schema("{\"type\":\"object\",\"required\":[\"status\",\"run_id\",\"hostname\",\"counter\",\"timestamp\",\"time_ns\",\"time_iso\",\"echo\"],\"properties\":{\"status\":{\"type\":\"string\",\"const\":\"ok\"},\"counter\":{\"type\":\"integer\",\"minimum\":1},\"time_ns\":{\"type\":\"integer\"},\"timestamp\":{\"type\":\"number\"},\"run_id\":{\"type\":\"string\"},\"hostname\":{\"type\":\"string\"},\"echo\":{\"type\":\"string\"}}}"));
   assert(api.json("$.counter").to_int() > 0);
+  if(${expected_run}!=""){assert_eq(api.json("$.run_id").value(),${expected_run});}
+  assert(api.time("total")<5000.0);
   assert(api2.json("$.counter").to_int() > api.json("$.counter").to_int());
   assert(api2.json("$.time_ns").to_int() > api.json("$.time_ns").to_int());
   assert(api.json("$.echo").value()=="<tag>");
 }
-file_write("reports/dynamic-contract.csv","offline,"+offline+"\nfirst_status,"+str(first.status())+"\nsecond_status,"+str(second.status())+"\napi_status,"+str(api.status())+"\nfirst_bytes,"+str(first.bytes())+"\napi_bytes,"+str(api.bytes())+"\n");
+file_write("reports/dynamic-contract.csv","requests,"+str(first.attempts()+second.attempts()+api.attempts()+api2.attempts())+"\nbytes_bound,"+str(first.bytes()+second.bytes()+api.bytes()+api2.bytes())+"\noffline,"+offline+"\nfirst_status,"+str(first.status())+"\nsecond_status,"+str(second.status())+"\napi_status,"+str(api.status())+"\nfirst_bytes,"+str(first.bytes())+"\napi_bytes,"+str(api.bytes())+"\n");
 mock.stop();
 println("dynamic contract passed");
 end _dsl_
 savedsl(p,".lmweblab-dynamic.dslb");
 r = system ${dsl_cli(p)} --dsl .lmweblab-dynamic.dslb;
-if(r.code!=0){println(r.stdout);println(r.stderr);}
+if(r.code!=0){mkdir(".lmweblab-local");write_file(".lmweblab-local/dynamic_contract-error.log",r.stdout+"\n"+r.stderr);println(r.stdout);println(r.stderr);}
 assert(r.code==0);

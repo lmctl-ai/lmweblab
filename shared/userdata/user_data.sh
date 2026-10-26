@@ -120,8 +120,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(not_found)
 
 
+class WebServer(http.server.ThreadingHTTPServer):
+    # A short eight-client load check must fit without a TCP SYN retry.
+    request_queue_size = 64
+    daemon_threads = True
+
+
 if __name__ == "__main__":
-    server = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    server = WebServer(("0.0.0.0", PORT), Handler)
     server.serve_forever()
 PYEOF
 

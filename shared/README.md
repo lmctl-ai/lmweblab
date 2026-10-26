@@ -15,3 +15,5 @@ The lmcurl contract scripts are in `tests/`:
 Run a script through the lmscript host with `lmctl shared/tests/static_contract.lms` (or use its raw GitHub URL). The driver writes URLs to the corresponding private dot files before invocation. Live mode fails closed when a URL is missing; it never substitutes a mock. Offline mode is explicit and uses only lmcurl’s built-in `/site/*` fixtures. The scripts install `lmcurl` themselves, retry propagation, assert status/content/schema, write a small report under `reports/`, and never invoke an AWS command. A live run must set `AWS_PROFILE=lmaws` in the surrounding stack driver; the contract scripts themselves only perform HTTP.
 
 From the repository root, `bash shared/tests/offline_gate.sh` runs all three scripts in a fresh temporary directory with the explicit offline marker. It is suitable for the local gate and makes no AWS calls.
+
+`python3 shared/tests/test-userdata.py` extracts the actual user-data Python handler, starts it on loopback and checks it using the same lmcurl dynamic and load scripts. The listen queue supports the bounded eight-client load. Response timing values use milliseconds.

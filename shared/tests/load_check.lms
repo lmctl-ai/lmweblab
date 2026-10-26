@@ -1,8 +1,9 @@
 # Small bounded lmcurl load check. The driver supplies `.lmweblab-dynamic-url` for a live run.
 # It never creates cloud resources and is safe to run against the lmcurl mock.
 mkdir("reports");
+let fixture_mode=contains(ARGV,"--offline") || (!contains(ARGV,"--live") && file_exists(".lmweblab-offline"));
 p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
-let offline="0";if(file_exists(".lmweblab-offline")){offline="1";}
+let offline=${fixture_mode ? "1":"0"};
 let base="";if(file_exists(".lmweblab-dynamic-url")){base=file_read(".lmweblab-dynamic-url");}
 let mock=curl.mock();
 if(offline=="1"){base=mock.url();}else{assert(base!="");}
@@ -10,12 +11,12 @@ let s=curl.session(base);
 let load_path="/healthz";if(offline=="1"){load_path="/delay/1";}
 let load=curl.load(s.get(load_path).proxy(""),8,1.0,10);
 assert(load.requests()>0);
-assert(load.p95_ms()>=0.0);
-file_write("reports/load-check.csv","offline,"+offline+"\nrequests,"+str(load.requests())+"\np95_ms,"+str(load.p95_ms())+"\nestimated_cost_usd,0.0\n");
+assert(load.p95_ms()>=0.0);assert(load.error_rate()==0.0);assert(load.p95_ms()<5000.0);
+file_write("reports/load-check.csv","bytes_bound,"+str(load.requests()*1024)+"\noffline,"+offline+"\nrequests,"+str(load.requests())+"\np95_ms,"+str(load.p95_ms())+"\nestimated_cost_usd,0.0\n");
 mock.stop();
 println("load check passed; p95 ms="+str(load.p95_ms()));
 end _dsl_
 savedsl(p,".lmweblab-load.dslb");
 r = system ${dsl_cli(p)} --dsl .lmweblab-load.dslb;
-if(r.code!=0){println(r.stdout);println(r.stderr);}
+if(r.code!=0){mkdir(".lmweblab-local");write_file(".lmweblab-local/load_check-error.log",r.stdout+"\n"+r.stderr);println(r.stdout);println(r.stderr);}
 assert(r.code==0);

@@ -1,7 +1,7 @@
 # Test both static CloudFront endpoints and the dynamic EC2 endpoint through lmcurl.
 import "./common.lms";
 let o = options(ARGV);
-configure_live(o);
+configure_live(o);mkdir("reports");
 assert(file_exists(".lmweblab-local/lmaws-stack.json"), "run up first");
 let mode = "--offline";
 if (o.live) {
@@ -13,18 +13,54 @@ if (o.live) {
   write_file(".lmweblab-cf-url", scheme+state.cf_domain);
   write_file(".lmweblab-dynamic-url", "http://"+state.app);
 } else { write_file(".lmweblab-offline", "1\n"); }
+# Admit a bounded HTTP request/transfer estimate before dispatching the suite.
+let admission=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let cloud=aws.example("web_http_admission");check(cloud.is_demo()==${!o.live});
+let web=cloud.web_stack(${o.run_id},${o.domain},".lmweblab-local/lmaws-web-state-"+${o.run_id}+".json");
+let result=web.step("reserve_http","{\"requests\":100,\"bytes\":1048576}");
+end _dsl_
+savedsl(admission,".lmweblab-local/http-admission.dslb");
+let mode_flags=o.live?["--live","--profile","lmaws","--region","us-east-1"]:["--dry-run"];
+let admitted=lmaws_execute(admission,o,".lmweblab-local/http-admission.dslb",120000);
+assert(admitted.code==0,"HTTP cost reservation refused; native recovery attempted");
+if(o.live) {
+  let app_url=trim(read_file(".lmweblab-dynamic-url"));
+  let probe=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let ready=curl.session(${app_url}).get("/healthz").proxy("").timeout(3000).retry(5,2000).send();
+assert_eq(ready.status(),200);
+file_write("reports/ready-success.csv","requests,"+str(ready.attempts())+"\nbytes_bound,"+str(ready.bytes())+"\n");
+end _dsl_
+  savedsl(probe,".lmweblab-local/readiness.dslb");
+  let ready=false;let failed_rounds=0;
+  while(!ready && failed_rounds<8) {
+    let attempt=system(concat(dsl_cli(probe),["--dsl",".lmweblab-local/readiness.dslb"]),40000);
+    ready=attempt.code==0;if(!ready){failed_rounds=failed_rounds+1;}
+  }
+  if(!ready){let recovery=system(["lmctl","lmaws/down.lms","--run-id",o.run_id,"--domain",o.domain,"--live"],1800000);assert(false,"bounded application readiness failed; recovery attempted");}
+  write_file("reports/readiness.csv","requests,"+str(failed_rounds*6)+"\nbytes_bound,"+str(failed_rounds*6*1024)+"\n"+read_file("reports/ready-success.csv"));
+} else {write_file("reports/readiness.csv","requests,0\nbytes_bound,0\n");}
 let test_static = system(["lmctl", "shared/tests/static_contract.lms", mode], 600000);
 let test_dynamic = system(["lmctl", "shared/tests/dynamic_contract.lms", mode], 600000);
 let load = system(["lmctl", "shared/tests/load_check.lms", mode], 600000);
-for (check in [test_static,test_dynamic,load]) {if(check.code!=0){println(check.stdout);println(check.stderr);}}
-if(test_static.code!=0 || test_dynamic.code!=0 || load.code!=0){let recovery=system(["lmctl","lmaws/down.lms","--run-id",o.run_id,"--live"],1500000);println(recovery.stdout);assert(false,"lmcurl contract suite failed; recovery attempted");}
+for (check in [test_static,test_dynamic,load]) {if(check.code!=0){write_file(".lmweblab-local/last-test-error.log",check.stdout+"\n"+check.stderr);println(check.stdout);println(check.stderr);}}
+if(test_static.code!=0 || test_dynamic.code!=0 || load.code!=0){let recovery=system(["lmctl","lmaws/down.lms","--run-id",o.run_id,"--domain",o.domain,o.live?"--live":"--offline"],1500000);println(recovery.stdout);assert(false,"lmcurl contract suite failed; recovery attempted");}
 if (!o.live && file_exists(".lmweblab-offline")) { remove_file(".lmweblab-offline"); }
+let total_requests=0;let total_bytes=0;
+for (file in ["reports/readiness.csv","reports/static-contract.csv","reports/dynamic-contract.csv","reports/load-check.csv"]) {
+  for(line in lines(read_file(file))) {
+    let row=split(line,",");
+    if(len(row)>=2 && row[0]=="requests"){total_requests=total_requests+num(row[1]);}
+    if(len(row)>=2 && row[0]=="bytes_bound"){total_bytes=total_bytes+num(row[1]);}
+  }
+}
+let http_usage=json_stringify({requests:total_requests,bytes:total_bytes});
 let p = _dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
 let cloud = aws.example("web_stack_test");
 check(cloud.is_demo() == ${!o.live});
 let web = cloud.web_stack(${o.run_id}, ${o.domain}, ".lmweblab-local/lmaws-web-state-" + ${o.run_id} + ".json");
-let result = web.status();
+let result = web.step("record_http",${http_usage});
+file_write(".lmweblab-local/http-summary.json",web.status().json());
 end _dsl_
 savedsl(p, ".lmweblab-local/lmaws-test.dslb");
-let r = system(concat(dsl_cli(p), concat(o.live ? ["--live","--profile","lmaws","--region","us-east-1"] : ["--dry-run"], ["--dsl", ".lmweblab-local/lmaws-test.dslb"])), 900000);
+let r=lmaws_execute(p,o,".lmweblab-local/lmaws-test.dslb",900000);
 println(r.stdout); if (r.code != 0) { println(r.stderr); assert(false, "web stack test failed"); }

@@ -8,20 +8,21 @@ if (o.live && o.cidr == "") {
   o.cidr = trim(read_file(".lmweblab-local/caller-ip.txt")) + "/32";
 }
 save_options(o);
+let bucket_settings=json_stringify({site_dir:o.site_dir});
 let p = _dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
 let cloud = aws.example("web_stack_up");
 check(cloud.is_demo() == ${!o.live});
 let web = cloud.web_stack(${o.run_id}, ${o.domain}, ".lmweblab-local/lmaws-web-state-" + ${o.run_id} + ".json");
-let result = web.step("bucket", "{\"run_id\":\"" + ${o.run_id} + "\",\"live\":" + str(${o.live}) + "}");
-let dist = web.step("distribution", "{\"run_id\":\"" + ${o.run_id} + "\"}");
+let result = web.step("bucket", ${bucket_settings});
 let cert = web.step("certificate", "{\"run_id\":\"" + ${o.run_id} + "\",\"domain\":\"" + ${o.domain} + "\"}");
+let dist = web.step("distribution", "{\"run_id\":\"" + ${o.run_id} + "\"}");
 let dns_site = web.step("dns_site", "{\"run_id\":\"" + ${o.run_id} + "\",\"domain\":\"" + ${o.domain} + "\"}");
 let vpc_id = ${o.vpc_id}; let subnet_id = ${o.subnet_id}; let ami = ${o.ami};
 if (vpc_id == "" || subnet_id == "") {
   let subs = cloud.subnets(); let j = 0;
   while (j < subs.len() && subnet_id == "") {
     let candidate = subs.at(j);
-    if (candidate.get("map_public_ip") == "true" && candidate.get("fleet") != "true") { subnet_id = candidate.get("id"); vpc_id = candidate.get("vpc"); }
+    if (candidate.get("map_public_ip") == "true") { subnet_id = candidate.get("id"); vpc_id = candidate.get("vpc"); }
     j = j + 1;
   }
 }
@@ -31,7 +32,7 @@ let dns_app = web.step("dns_app", "{\"run_id\":\"" + ${o.run_id} + "\",\"domain\
 let summary = web.status();
 end _dsl_
 savedsl(p, ".lmweblab-local/lmaws-up.dslb");
-let r = system(concat(dsl_cli(p), concat(o.live ? ["--live","--profile","lmaws","--region","us-east-1"] : ["--dry-run"], ["--dsl", ".lmweblab-local/lmaws-up.dslb"])), 1500000);
+let r=lmaws_execute(p,o,".lmweblab-local/lmaws-up.dslb",1500000);
 println(r.stdout); if (r.code != 0) { println(r.stderr); assert(false, "web stack up failed"); }
 let mode = "offline"; if (o.live) { mode = "live"; }
 write_file(".lmweblab-local/lmaws-stack.json", json_stringify({run_id:o.run_id,domain:o.domain,mode:mode}, 2));
