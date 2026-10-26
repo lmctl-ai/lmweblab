@@ -34,3 +34,5 @@ HTTP checks include bounded readiness polling, exact status/content checks, HTML
 [Importable per-step recipes](lmaws/recipes/README.md) support reuse from a local path or a raw URL. [Shared test contracts](shared/README.md) describe the lmcurl-only HTTP tests.
 
 Live Part A passed both phases: p95 **391 ms HTTP** and **152 ms HTTPS**. The successful estimate was **$0.00108**; the complete campaign estimate was **$0.00514**. A fresh lmaws process verified **zero active leftovers** across all seven attempt namespaces. [Timings, cost basis and tool comparison](compare/RESULTS.md).
+
+[lmaws v0.1.16 release](https://github.com/lmctl-ai/lmaws/releases/tag/v0.1.16): five native binaries, verified checksums, and a fresh-cache offline install proof.

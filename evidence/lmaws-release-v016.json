@@ -1,0 +1,35 @@
+{
+  "tag": "v0.1.16",
+  "assets": [
+    {
+      "name": "lmaws-linux-arm64",
+      "bytes": 96340088,
+      "sha256": "e4f50579ed11e9b10591563478e1d43a3c0bb9134c89aca2e92b9d2be3c80731"
+    },
+    {
+      "name": "lmaws-linux-x64",
+      "bytes": 99944712,
+      "sha256": "1557d71d34ad34d662260ff70851c7d4dc876751e33fd26df9fea43b071424f5"
+    },
+    {
+      "name": "lmaws-macos-arm64",
+      "bytes": 91882776,
+      "sha256": "ce7d44bb1f17a11e935dd44b2c5d01036204f393ce9a3427f92c6f9b7005aecc"
+    },
+    {
+      "name": "lmaws-macos-x64",
+      "bytes": 94710672,
+      "sha256": "01c6b5910a9f2a4f26f3e19164e2a62ae812a76b4f0fe8b361324c51f1c8ee83"
+    },
+    {
+      "name": "lmaws-windows-x64.exe",
+      "bytes": 96956416,
+      "sha256": "2713dfbc9f1b2c380c37c015ab40ab4ebb1a36172b52333cec54c749b141174d"
+    }
+  ],
+  "asset_count": 5,
+  "checksums_verified": true,
+  "linux_version_verified": true,
+  "native_selftest_passed": true,
+  "fresh_cache_empty_directory_offline_web_api": true
+}

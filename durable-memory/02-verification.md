@@ -7,3 +7,5 @@ The successful estimate is $0.00107766; the complete campaign estimate is $0.005
 `bash test.sh` runs in a fresh temporary directory with fake cloud transport, both HTTP contract phases, import-only recipe composition, image checks and the actual Python user-data handler on loopback through lmcurl. The lmaws host additionally tests its SDK serialization against loopback endpoints and the native executable, including ownership/cost refusals.
 
 Live verification is Linux-only. macOS and Windows use fake-transport/build checks. The operator supplies an existing public hosted zone and the `lmaws` profile grant; the scripts do not change IAM, credentials or profile files. The nano has a bounded lifetime; use `down` to recover interrupted resource lifecycles from the private state.
+
+[lmaws v0.1.16](https://github.com/lmctl-ai/lmaws/releases/tag/v0.1.16) is published with five native binaries and SHA256SUMS. All five platform jobs passed. The [release proof](../evidence/lmaws-release-v016.json) records checksum verification, Linux self-test/linkage and an empty-directory, empty-cache offline web API install.
