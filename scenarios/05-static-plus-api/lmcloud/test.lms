@@ -1,0 +1,81 @@
+# === CONFIG ===
+let NAME_PREFIX = "lmaws";
+let SCENARIO_SLUG = "s05";
+let HTML_CACHE_SECONDS = 300;
+let REQUEST_TIMEOUT_MS = 5000;
+# === END CONFIG ===
+
+let stack_dir = file_exists("main.tf") ? "." : "scenarios/05-static-plus-api/lmcloud";
+let state_dir = path_join(stack_dir, ".lmweblab-local");
+mkdir(state_dir);
+mkdir("images");
+mkdir("data");
+
+let csv_path = "data/s05_lmcloud_latency.csv";
+let arch_img = "images/s05_lmcloud_architecture.png";
+let plot_img = "images/s05_lmcloud_latency.png";
+let t0 = now();
+
+let p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let m = curl.mock();
+let base = m.url();
+let s = curl.session(base);
+let timeout_ms = ${REQUEST_TIMEOUT_MS};
+let out_csv = ${csv_path};
+
+let r_static = s.get("/site/index.html").proxy("").timeout(timeout_ms).send();
+assert_eq(r_static.status(), 200);
+assert(str_contains(r_static.body(), "Fixture site"));
+
+let r_api = s.get("/json").proxy("").timeout(timeout_ms).send();
+assert_eq(r_api.status(), 200);
+
+let csv = "metric,ms\n" +
+  "static / ms," + str(r_static.time("total")) + "\n" +
+  "dynamic /api/* ms," + str(r_api.time("total")) + "\n";
+file_write(out_csv, csv);
+m.stop();
+end _dsl_
+
+let dslb = path_join(state_dir, "test.dslb");
+savedsl(p, dslb);
+assert(system(concat(dsl_cli(p), ["--dsl", dslb]), 60000).code == 0);
+
+let arch = _dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
+scene.canvas(920, 400, "#0f172a");
+scene.text(32.0, 42.0, 20.0, "Scenario 05: Unified CloudFront (/ -> S3, /api/* -> Lambda URL) (lmcloud)", "#f8fafc").set_attr("font-weight", "700");
+scene.text(32.0, 68.0, 13.0, "Single Domain, Zero CORS: Default Behavior -> S3 (OAC), Ordered Behavior /api/* -> Lambda URL", "#94a3b8");
+scene.cluster(32.0, 96.0, 856.0, 260.0, "", "#131c2e", "#334155", 10.0, 13.0);
+let r53 = scene.box(130.0, 225.0, 165.0, 68.0, "Route 53 Alias A\n" + ${NAME_PREFIX} + "-tf-" + ${SCENARIO_SLUG} + "-site", "#1e293b", "#38bdf8", 8.0, 13.0);
+let cf = scene.box(385.0, 225.0, 185.0, 74.0, "CloudFront\n2 Origins (/ + /api/*)", "#1e293b", "#818cf8", 8.0, 13.0);
+let s3 = scene.cylinder(680.0, 165.0, 180.0, 68.0, "Private S3 Bucket\n/* (max-age=300)", "#1e293b", "#34d399", 12.0);
+let fn_b = scene.box(680.0, 285.0, 180.0, 64.0, "Lambda URL\n/api/* (TTL=0)", "#1e293b", "#fbbf24", 8.0, 12.0);
+scene.connector(r53, "e", cf, "w", "straight", "none", "arrow", "none", "#38bdf8", 2.0, "Same Origin", 0.5, 0.0, -10.0);
+scene.connector(cf, "e", s3, "w", "elbow", "none", "arrow", "none", "#34d399", 2.0, "OAC /*", 0.5, -10.0, -8.0);
+scene.connector(cf, "e", fn_b, "w", "elbow", "none", "arrow", "none", "#fbbf24", 2.0, "/api/*", 0.5, -10.0, 10.0);
+scene.render_png(${arch_img}, 920, 400, 1);
+end _dsl_
+let arch_dslb = path_join(state_dir, "arch.dslb");
+savedsl(arch, arch_dslb);
+assert(system(concat(dsl_cli(arch), ["--dsl", arch_dslb]), 60000).code == 0);
+
+let plot = _dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
+plot.png(${plot_img}, 860, 480);
+plot.cmd("set datafile separator ','");
+plot.cmd("set title 'Scenario 05 (lmcloud): Static / vs Dynamic /api/* Latency (ms)' noenhanced");
+plot.cmd("set yrange [0:*]; set offsets 0,0,graph 0.15,0; set grid y; unset key; set style fill solid 0.85; set boxwidth 0.55");
+plot.cmd("set ylabel 'Latency (ms)'");
+plot.cmd("plot '" + ${csv_path} + "' every ::1 using 0:2:xtic(1) with boxes lc rgb '#818cf8', '' every ::1 using 0:2:(sprintf('%.2f ms',$2)) with labels offset 0,0.8");
+plot.close();
+end _dsl_
+let plot_dslb = path_join(state_dir, "plot.dslb");
+savedsl(plot, plot_dslb);
+assert(system(concat(dsl_cli(plot), ["--dsl", plot_dslb]), 60000).code == 0);
+
+if (stack_dir != ".") {
+  mkdir(path_join(stack_dir, "images"));
+  write_file(path_join(stack_dir, arch_img), read_file(arch_img));
+  write_file(path_join(stack_dir, plot_img), read_file(plot_img));
+}
+println("ok - scenario 05 test.lms passed in " + str(now() - t0) + " ms");
+println("estimated cost: $0.0000");

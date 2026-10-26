@@ -1,0 +1,178 @@
+# === CONFIG ===
+let REGION = getenv("AWS_REGION", "") != "" ? getenv("AWS_REGION", "") : "us-east-1";
+let DOMAIN = getenv("LMWEBLAB_DOMAIN", "") != "" ? getenv("LMWEBLAB_DOMAIN", "") : "example.com";
+let NAME_PREFIX = "lmaws";
+let SCENARIO_SLUG = "s11";
+let AWS_PROFILE_NAME = getenv("AWS_PROFILE", "") != "" ? getenv("AWS_PROFILE", "") : "lmaws";
+let LIVE_MODE = getenv("LMWEBLAB_LIVE", "0") == "1";
+let DEFAULT_RUN_ID = getenv("LMWEBLAB_RUN_ID", "") != "" ? getenv("LMWEBLAB_RUN_ID", "") : "demo01";
+let DESTROY_TIMEOUT_MS = 1500000;
+# === END CONFIG ===
+
+let live = LIVE_MODE;
+let run_id = DEFAULT_RUN_ID;
+let domain = DOMAIN;
+
+let i = 0;
+while (i < len(ARGV)) {
+  let a = ARGV[i];
+  if (a == "--live") { live = true; }
+  else if (a == "--offline" || a == "--dry-run") { live = false; }
+  else if (a == "--run-id" && i + 1 < len(ARGV)) { i = i + 1; run_id = ARGV[i]; }
+  else if (a == "--domain" && i + 1 < len(ARGV)) { i = i + 1; domain = ARGV[i]; }
+  i = i + 1;
+}
+
+let stack_dir = file_exists("main.tf") ? "." : "scenarios/11-weighted-dns-two-backends/lmcloud";
+let state_dir = path_join(stack_dir, ".lmweblab-local");
+mkdir(state_dir);
+
+let meta_path = path_join(state_dir, "stack.json");
+if (file_exists(meta_path)) {
+  let meta = json_parse(read_file(meta_path));
+  if (run_id == "demo01") { run_id = get(meta, "run_id", run_id); }
+  if (domain == "example.com") { domain = get(meta, "domain", domain); }
+  if (get(meta, "mode", "offline") == "live") { live = true; }
+}
+
+if (live) {
+  assert(AWS_PROFILE_NAME == "lmaws", "Live teardown MUST use AWS_PROFILE=lmaws only");
+  set_env("AWS_PROFILE", AWS_PROFILE_NAME);
+  set_env("AWS_DEFAULT_PROFILE", AWS_PROFILE_NAME);
+  set_env("AWS_REGION", REGION);
+  set_env("AWS_DEFAULT_REGION", REGION);
+} else {
+  set_env("AWS_EC2_METADATA_DISABLED", "true");
+}
+
+let offline_str = live ? "false" : "true";
+let profile_str = live ? AWS_PROFILE_NAME : "";
+let t0 = now();
+let t_des0 = now();
+
+let destroy_prog = _dsl_ cli="lmcloud" install="github:lmctl-ai/lmcloud@latest";
+let dir = ${stack_dir};
+let run_id = ${run_id};
+let name_prefix = ${NAME_PREFIX};
+let scenario_slug = ${SCENARIO_SLUG};
+let domain = ${domain};
+let region = ${REGION};
+let aws_profile = ${profile_str};
+let offline_mode = ${offline_str};
+
+if (!tofu.init(dir)) {
+  print("INIT_ERROR: " + tofu.last_error());
+  assert_close(0.0, 1.0, 0.0);
+}
+tofu.var("run_id", run_id);
+tofu.var("name_prefix", name_prefix);
+tofu.var("scenario_slug", scenario_slug);
+tofu.var("domain", domain);
+tofu.var("aws_region", region);
+tofu.var("aws_profile", aws_profile);
+tofu.var("offline_mode", offline_mode);
+
+if (offline_mode == "false") {
+  if (!tofu.destroy(dir)) {
+    print("DESTROY_ERROR: " + tofu.last_error());
+    assert_close(0.0, 1.0, 0.0);
+  }
+}
+
+let remaining = str_trim(tofu.state_list(dir));
+if (str_len(remaining) != 0) {
+  print("LEFTOVER_STATE_ERROR: " + remaining);
+  assert_close(float(str_len(remaining)), 0.0, 0.0);
+}
+let post_plan = tofu.plan(dir);
+assert_close(float(post_plan.add()), 14.0, 0.0);
+print("TOFU_STATE_EMPTY_OK: 0 resources in state for run_id=" + run_id + " (post-destroy plan add=" + str(post_plan.add()) + ")");
+end _dsl_
+
+let dslb = path_join(state_dir, "down.dslb");
+savedsl(destroy_prog, dslb);
+let r_des = system(concat(dsl_cli(destroy_prog), ["--dsl", dslb]), DESTROY_TIMEOUT_MS);
+let destroy_ms = now() - t_des0;
+println(r_des.stdout);
+if (r_des.code != 0) { println(r_des.stderr); }
+assert(r_des.code == 0, "scenario 11 destroy failed");
+
+# Verify Route 53 weighted DNS records for lmaws-tf-split-<run_id>.<domain> are gone when live
+if (live) {
+  let split_fqdn = NAME_PREFIX + "-tf-split-" + run_id + "." + domain;
+  let dns_check = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let fqdn = ${split_fqdn};
+let doh = curl.session("https://dns.google");
+let r = doh.get("/resolve?name=" + fqdn + "&type=A&edns_client_subnet=70.250.1.0/24").timeout(10000).retry(3, 1000).send();
+assert_eq(r.status(), 200);
+assert(r.json("$.Answer").missing());
+end _dsl_
+  let dns_dslb = path_join(state_dir, "dns-gone.dslb");
+  savedsl(dns_check, dns_dslb);
+  let r_dns = system(concat(dsl_cli(dns_check), ["--dsl", dns_dslb]), 30000);
+  assert(r_dns.code == 0, "Route 53 weighted records still resolving after destroy: " + r_dns.stderr);
+}
+
+# Independent leftover audit via lmaws
+let t_aud0 = now();
+let b_file = path_join(state_dir, "audit-buckets.json");
+let i_file = path_join(state_dir, "audit-instances.json");
+let s_file = path_join(state_dir, "audit-sgs.json");
+let audit_prog = _dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let is_live = ${offline_str} == "false";
+let region = ${REGION};
+let out_b = ${b_file};
+let out_i = ${i_file};
+let out_s = ${s_file};
+if (is_live) {
+  let c = aws.region(region);
+  file_write(out_b, c.buckets().json());
+  file_write(out_i, c.instances().json());
+  file_write(out_s, c.security_groups().json());
+} else {
+  let c = aws.demo();
+  file_write(out_b, c.buckets().json());
+  file_write(out_i, c.instances().json());
+  file_write(out_s, c.security_groups().json());
+}
+end _dsl_
+let audit_dslb = path_join(state_dir, "audit.dslb");
+savedsl(audit_prog, audit_dslb);
+set_env("LMAWS_LIVE", live ? "1" : "0");
+set_env("LMAWS_MAX_COST_USD", "0.05");
+let r_aud = system(concat(dsl_cli(audit_prog), ["--dsl", audit_dslb]), 120000);
+assert(r_aud.code == 0, "lmaws audit failed: " + r_aud.stderr);
+
+let target_prefix = NAME_PREFIX + "-tf-" + SCENARIO_SLUG + "-" + run_id;
+let buckets_list = json_parse(read_file(b_file));
+for (b in buckets_list) {
+  let b_str = json_stringify(b);
+  assert(!contains(b_str, target_prefix) && !contains(b_str, run_id), "Leftover bucket found: " + b_str);
+}
+let instances_list = json_parse(read_file(i_file));
+for (inst in instances_list) {
+  let st = str(get(inst, "state", ""));
+  let i_str = json_stringify(inst);
+  if (st != "terminated") {
+    assert(!contains(i_str, target_prefix) && !contains(i_str, run_id), "Leftover instance found: " + i_str);
+  }
+}
+let sgs_list = json_parse(read_file(s_file));
+for (sg in sgs_list) {
+  let sg_str = json_stringify(sg);
+  assert(!contains(sg_str, target_prefix) && !contains(sg_str, run_id), "Leftover security group found: " + sg_str);
+}
+let audit_ms = now() - t_aud0;
+let elapsed_ms = now() - t0;
+
+write_file(path_join(state_dir, "down-timing.json"), json_stringify({
+  scenario: "11-weighted-dns-two-backends",
+  mode: live ? "live" : "offline",
+  run_id: run_id,
+  destroy_ms: destroy_ms,
+  audit_ms: audit_ms,
+  elapsed_ms: elapsed_ms,
+  leftovers_count: 0
+}, 2));
+println("ok - scenario 11 down.lms verified 0 leftovers for run_id=" + run_id + " (" + str(elapsed_ms) + " ms)");
+println("estimated cost: $0.0000");

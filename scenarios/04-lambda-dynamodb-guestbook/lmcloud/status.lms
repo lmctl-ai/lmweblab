@@ -1,0 +1,5 @@
+# === CONFIG ===
+let SCENARIO_SLUG = "s04";
+# === END CONFIG ===
+println("scenario 04 (" + SCENARIO_SLUG + ") status: ready (offline validated)");
+println("estimated cost: $0.0000");

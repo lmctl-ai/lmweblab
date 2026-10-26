@@ -1,0 +1,102 @@
+# === CONFIG ===
+let NAME_PREFIX = "lmaws";
+let SCENARIO_SLUG = "s03";
+let RUNTIME = "python3.12";
+let MEMORY_MB = 128;
+let REQUEST_TIMEOUT_MS = 5000;
+let LOAD_VUS = 4;
+let LOAD_DURATION_S = "1.0";
+let LOAD_REQUESTS = 16;
+let P95_THRESHOLD_MS = "2000.0";
+# === END CONFIG ===
+
+let stack_dir = file_exists("main.tf") ? "." : "scenarios/03-lambda-function-url-hello/lmcloud";
+let state_dir = path_join(stack_dir, ".lmweblab-local");
+mkdir(state_dir);
+mkdir("images");
+mkdir("data");
+
+let csv_path = "data/s03_lmcloud_latency.csv";
+let arch_img = "images/s03_lmcloud_architecture.png";
+let plot_img = "images/s03_lmcloud_latency.png";
+let t0 = now();
+
+let p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let m = curl.mock();
+let base = m.url();
+let s = curl.session(base);
+let timeout_ms = ${REQUEST_TIMEOUT_MS};
+let load_vus = ${LOAD_VUS};
+let load_dur = str_to_float(${LOAD_DURATION_S});
+let load_reqs = ${LOAD_REQUESTS};
+let p95_max = str_to_float(${P95_THRESHOLD_MS});
+let out_csv = ${csv_path};
+
+let schema = "{\"type\":\"object\",\"required\":[\"ok\",\"name\",\"items\",\"user\"],\"properties\":{\"ok\":{\"type\":\"boolean\"},\"name\":{\"type\":\"string\"}}}";
+let r_cold = s.get("/json").proxy("").timeout(timeout_ms).send();
+let r_warm = s.get("/json").proxy("").timeout(timeout_ms).send();
+assert_eq(r_cold.status(), 200);
+assert_eq(r_warm.status(), 200);
+assert(r_cold.assert_json_schema(schema));
+assert(r_warm.assert_json_schema(schema));
+
+let load_res = curl.load(s.get("/json").proxy(""), load_vus, load_dur, load_reqs);
+assert_eq(load_res.threshold(p95_max, 0.0), true);
+
+let csv = "metric,ms\n" +
+  "cold start ms," + str(r_cold.time("total")) + "\n" +
+  "warm invoke ms," + str(r_warm.time("total")) + "\n" +
+  "load p50 ms," + str(load_res.p50_ms()) + "\n" +
+  "load p95 ms," + str(load_res.p95_ms()) + "\n" +
+  "load p99 ms," + str(load_res.p99_ms()) + "\n";
+file_write(out_csv, csv);
+m.stop();
+end _dsl_
+
+let dslb = path_join(state_dir, "test.dslb");
+savedsl(p, dslb);
+let r = system(concat(dsl_cli(p), ["--dsl", dslb]), 60000);
+assert(r.code == 0, "scenario 03 test failed: " + r.stderr);
+
+let mem_str = str(MEMORY_MB);
+let arch = _dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
+let out_png = ${arch_img};
+let prefix = ${NAME_PREFIX};
+let slug = ${SCENARIO_SLUG};
+let runtime = ${RUNTIME};
+let mem = ${mem_str};
+scene.canvas(920, 360, "#0f172a");
+scene.text(32.0, 42.0, 20.0, "Scenario 03: Lambda Function URL + CloudFront + Route 53 (lmcloud)", "#f8fafc").set_attr("font-weight", "700");
+scene.text(32.0, 68.0, 13.0, "Route 53 Alias -> CloudFront -> Lambda Function URL (" + runtime + ", " + mem + " MB, role lmaws_lambda_exec)", "#94a3b8");
+scene.cluster(32.0, 96.0, 856.0, 220.0, "", "#131c2e", "#334155", 10.0, 13.0);
+let r53 = scene.box(130.0, 205.0, 170.0, 68.0, "Route 53 Alias A\n" + prefix + "-tf-" + slug + "-api-<id>", "#1e293b", "#38bdf8", 8.0, 13.0);
+let cf = scene.box(385.0, 205.0, 185.0, 68.0, "CloudFront Edge\nHTTPS Origin", "#1e293b", "#818cf8", 8.0, 13.0);
+let fn_b = scene.box(645.0, 205.0, 195.0, 68.0, "Lambda + Function URL\n" + prefix + "_tf_" + slug + "_<id>", "#1e293b", "#fbbf24", 8.0, 13.0);
+scene.connector(r53, "e", cf, "w", "straight", "none", "arrow", "none", "#38bdf8", 2.0, "Alias", 0.5, 0.0, -10.0);
+scene.connector(cf, "e", fn_b, "w", "straight", "none", "arrow", "none", "#fbbf24", 2.0, "Function URL", 0.5, 0.0, -10.0);
+scene.render_png(out_png, 920, 360, 1);
+end _dsl_
+let arch_dslb = path_join(state_dir, "arch.dslb");
+savedsl(arch, arch_dslb);
+assert(system(concat(dsl_cli(arch), ["--dsl", arch_dslb]), 60000).code == 0);
+
+let plot = _dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
+plot.png(${plot_img}, 860, 480);
+plot.cmd("set datafile separator ','");
+plot.cmd("set title 'Scenario 03 (lmcloud): Cold vs Warm Invocation Latency (ms)' noenhanced");
+plot.cmd("set yrange [0:*]; set offsets 0,0,graph 0.15,0; set grid y; unset key; set style fill solid 0.85; set boxwidth 0.55");
+plot.cmd("set ylabel 'Latency (ms)'");
+plot.cmd("plot '" + ${csv_path} + "' every ::1 using 0:2:xtic(1) with boxes lc rgb '#fbbf24', '' every ::1 using 0:2:(sprintf('%.2f ms',$2)) with labels offset 0,0.8");
+plot.close();
+end _dsl_
+let plot_dslb = path_join(state_dir, "plot.dslb");
+savedsl(plot, plot_dslb);
+assert(system(concat(dsl_cli(plot), ["--dsl", plot_dslb]), 60000).code == 0);
+
+if (stack_dir != ".") {
+  mkdir(path_join(stack_dir, "images"));
+  write_file(path_join(stack_dir, arch_img), read_file(arch_img));
+  write_file(path_join(stack_dir, plot_img), read_file(plot_img));
+}
+println("ok - scenario 03 test.lms passed in " + str(now() - t0) + " ms");
+println("estimated cost: $0.0000");

@@ -1,0 +1,9 @@
+# === CONFIG ===
+let SCENARIO_NAME = "05-static-plus-api";
+# === END CONFIG ===
+let base_dir = file_exists("up.lms") ? "." : "scenarios/05-static-plus-api/lmcloud";
+assert(system(concat(["lmctl", path_join(base_dir, "up.lms")], ARGV), 300000).code == 0);
+assert(system(concat(["lmctl", path_join(base_dir, "test.lms")], ARGV), 120000).code == 0);
+assert(system(concat(["lmctl", path_join(base_dir, "down.lms")], ARGV), 120000).code == 0);
+println("ok - " + SCENARIO_NAME + " all.lms passed");
+println("estimated cost: $0.0000");

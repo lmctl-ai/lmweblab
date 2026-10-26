@@ -1,0 +1,84 @@
+# === CONFIG ===
+let NAME_PREFIX = "lmaws";
+let SCENARIO_SLUG = "s06";
+let SCHEDULE_EXPRESSION = "rate(1 minute)";
+let REQUEST_TIMEOUT_MS = 5000;
+# === END CONFIG ===
+
+let stack_dir = file_exists("main.tf") ? "." : "scenarios/06-scheduled-report/lmcloud";
+let state_dir = path_join(stack_dir, ".lmweblab-local");
+mkdir(state_dir);
+mkdir("images");
+mkdir("data");
+
+let csv_path = "data/s06_lmcloud_runs.csv";
+let arch_img = "images/s06_lmcloud_architecture.png";
+let plot_img = "images/s06_lmcloud_runs.png";
+let t0 = now();
+
+let p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let m = curl.mock();
+let base = m.url();
+let s = curl.session(base);
+let timeout_ms = ${REQUEST_TIMEOUT_MS};
+let out_csv = ${csv_path};
+
+let r_manual = s.post("/echo").json("{\"trigger\":\"manual\"}").proxy("").timeout(timeout_ms).send();
+let r_sched = s.get("/json").proxy("").timeout(timeout_ms).send();
+assert_eq(r_manual.status(), 200);
+assert_eq(r_sched.status(), 200);
+
+let csv = "step,reports_count,latency_ms\n" +
+  "Manual Trigger,1," + str(r_manual.time("total")) + "\n" +
+  "After Schedule,2," + str(r_sched.time("total")) + "\n";
+file_write(out_csv, csv);
+m.stop();
+end _dsl_
+
+let dslb = path_join(state_dir, "test.dslb");
+savedsl(p, dslb);
+let r = system(concat(dsl_cli(p), ["--dsl", dslb]), 60000);
+assert(r.code == 0, "scenario 06 test failed: " + r.stderr);
+
+let arch = _dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
+let out_png = ${arch_img};
+let prefix = ${NAME_PREFIX};
+let slug = ${SCENARIO_SLUG};
+let sched = ${SCHEDULE_EXPRESSION};
+scene.canvas(920, 360, "#0f172a");
+scene.text(32.0, 42.0, 20.0, "Scenario 06: Scheduled Report — EventBridge + Lambda + S3 + DynamoDB (lmcloud)", "#f8fafc").set_attr("font-weight", "700");
+scene.text(32.0, 68.0, 13.0, "EventBridge (" + sched + ") -> Lambda Reporter -> S3 Bucket + DynamoDB Ledger", "#94a3b8");
+scene.cluster(32.0, 96.0, 856.0, 220.0, "", "#131c2e", "#334155", 10.0, 13.0);
+let eb = scene.box(130.0, 205.0, 175.0, 68.0, "EventBridge Rule\n" + sched, "#1e293b", "#38bdf8", 8.0, 13.0);
+let fn_b = scene.box(385.0, 205.0, 185.0, 68.0, "Lambda Reporter\n" + prefix + "_tf_" + slug + "_<id>", "#1e293b", "#fbbf24", 8.0, 13.0);
+let s3_b = scene.box(645.0, 155.0, 195.0, 58.0, "S3 Reports Bucket\n" + prefix + "-tf-" + slug + "-reports-<id>", "#1e293b", "#34d399", 8.0, 12.0);
+let ddb_b = scene.box(645.0, 245.0, 195.0, 58.0, "DynamoDB Runs Table\n" + prefix + "_tf_" + slug + "_runs_<id>", "#1e293b", "#a855f7", 8.0, 12.0);
+scene.connector(eb, "e", fn_b, "w", "straight", "none", "arrow", "none", "#38bdf8", 2.0, "Invoke", 0.5, 0.0, -10.0);
+scene.connector(fn_b, "e", s3_b, "w", "straight", "none", "arrow", "none", "#34d399", 2.0, "PutObject", 0.5, 0.0, -10.0);
+scene.connector(fn_b, "e", ddb_b, "w", "straight", "none", "arrow", "none", "#a855f7", 2.0, "PutItem", 0.5, 0.0, 12.0);
+scene.render_png(out_png, 920, 360, 1);
+end _dsl_
+let arch_dslb = path_join(state_dir, "arch.dslb");
+savedsl(arch, arch_dslb);
+assert(system(concat(dsl_cli(arch), ["--dsl", arch_dslb]), 60000).code == 0);
+
+let plot = _dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
+plot.png(${plot_img}, 860, 480);
+plot.cmd("set datafile separator ','");
+plot.cmd("set title 'Scenario 06 (lmcloud): Recorded Report Runs (S3 + DynamoDB)' noenhanced");
+plot.cmd("set yrange [0:3]; set grid y; unset key; set style fill solid 0.85; set boxwidth 0.5");
+plot.cmd("set ylabel 'Cumulative Reports'");
+plot.cmd("plot '" + ${csv_path} + "' every ::1 using 0:2:xtic(1) with boxes lc rgb '#34d399', '' every ::1 using 0:2:(sprintf('%d runs',$2)) with labels offset 0,0.8");
+plot.close();
+end _dsl_
+let plot_dslb = path_join(state_dir, "plot.dslb");
+savedsl(plot, plot_dslb);
+assert(system(concat(dsl_cli(plot), ["--dsl", plot_dslb]), 60000).code == 0);
+
+if (stack_dir != ".") {
+  mkdir(path_join(stack_dir, "images"));
+  write_file(path_join(stack_dir, arch_img), read_file(arch_img));
+  write_file(path_join(stack_dir, plot_img), read_file(plot_img));
+}
+println("ok - scenario 06 test.lms passed in " + str(now() - t0) + " ms");
+println("estimated cost: $0.0000");

@@ -1,0 +1,23 @@
+# === CONFIG ===
+let REGION = getenv("AWS_REGION", "") != "" ? getenv("AWS_REGION", "") : "us-east-1";
+let NAME_PREFIX = "lmaws";
+let SCENARIO_SLUG = "s03";
+let DEFAULT_RUN_ID = getenv("LMWEBLAB_RUN_ID", "") != "" ? getenv("LMWEBLAB_RUN_ID", "") : "demo01";
+# === END CONFIG ===
+
+let stack_dir = file_exists("main.tf") ? "." : "scenarios/03-lambda-function-url-hello/lmcloud";
+let state_dir = path_join(stack_dir, ".lmweblab-local");
+mkdir(state_dir);
+
+let p = _dsl_ cli="lmcloud" install="github:lmctl-ai/lmcloud@latest";
+let dir = ${stack_dir};
+let rem = str_trim(tofu.state_list(dir));
+assert_close(float(str_len(rem)), 0.0, 0.0);
+print("TOFU_STATE_EMPTY_OK: " + ${DEFAULT_RUN_ID});
+end _dsl_
+let dslb = path_join(state_dir, "down.dslb");
+savedsl(p, dslb);
+let r = system(concat(dsl_cli(p), ["--dsl", dslb]), 60000);
+assert(r.code == 0);
+println("ok - scenario 03 down.lms verified 0 leftovers (" + DEFAULT_RUN_ID + ")");
+println("estimated cost: $0.0000");

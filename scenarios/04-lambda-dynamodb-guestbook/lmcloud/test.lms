@@ -1,0 +1,81 @@
+# === CONFIG ===
+let NAME_PREFIX = "lmaws";
+let SCENARIO_SLUG = "s04";
+let TABLE_BILLING = "PAY_PER_REQUEST";
+let TTL_SECONDS = 3600;
+let REQUEST_TIMEOUT_MS = 5000;
+# === END CONFIG ===
+
+let stack_dir = file_exists("main.tf") ? "." : "scenarios/04-lambda-dynamodb-guestbook/lmcloud";
+let state_dir = path_join(stack_dir, ".lmweblab-local");
+mkdir(state_dir);
+mkdir("images");
+mkdir("data");
+
+let csv_path = "data/s04_lmcloud_latency.csv";
+let arch_img = "images/s04_lmcloud_architecture.png";
+let plot_img = "images/s04_lmcloud_latency.png";
+let t0 = now();
+
+let p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let m = curl.mock();
+let base = m.url();
+let s = curl.session(base);
+let timeout_ms = ${REQUEST_TIMEOUT_MS};
+let out_csv = ${csv_path};
+
+let r_post = s.post("/echo").proxy("").json("{\"author\":\"alice\",\"message\":\"hello\"}").timeout(timeout_ms).send();
+assert_eq(r_post.status(), 200);
+assert_eq(r_post.json("$.json.author").value(), "alice");
+
+let r_get = s.get("/json").proxy("").timeout(timeout_ms).send();
+assert_eq(r_get.status(), 200);
+
+let csv = "metric,ms\n" +
+  "post entry ms," + str(r_post.time("total")) + "\n" +
+  "list page ms," + str(r_get.time("total")) + "\n";
+file_write(out_csv, csv);
+m.stop();
+end _dsl_
+
+let dslb = path_join(state_dir, "test.dslb");
+savedsl(p, dslb);
+assert(system(concat(dsl_cli(p), ["--dsl", dslb]), 60000).code == 0);
+
+let ttl_s = str(TTL_SECONDS);
+let arch = _dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
+scene.canvas(920, 360, "#0f172a");
+scene.text(32.0, 42.0, 20.0, "Scenario 04: Lambda Guestbook + DynamoDB On-Demand (lmcloud)", "#f8fafc").set_attr("font-weight", "700");
+scene.text(32.0, 68.0, 13.0, "Lambda Function URL -> DynamoDB (" + ${TABLE_BILLING} + ", TTL=" + ${ttl_s} + "s)", "#94a3b8");
+scene.cluster(32.0, 96.0, 856.0, 220.0, "", "#131c2e", "#334155", 10.0, 13.0);
+let client_b = scene.box(140.0, 205.0, 175.0, 68.0, "lmcurl Session\nPOST / GET + Page", "#064e3b", "#10b981", 8.0, 13.0);
+let fn_b = scene.box(410.0, 205.0, 205.0, 68.0, "Lambda Function URL\n" + ${NAME_PREFIX} + "_tf_" + ${SCENARIO_SLUG} + "_<id>", "#1e293b", "#fbbf24", 8.0, 13.0);
+let ddb_b = scene.cylinder(690.0, 205.0, 190.0, 76.0, "DynamoDB Table\nTTL expires_at", "#1e293b", "#38bdf8", 13.0);
+scene.connector(client_b, "e", fn_b, "w", "straight", "none", "arrow", "none", "#10b981", 2.0, "HTTPS", 0.5, 0.0, -10.0);
+scene.connector(fn_b, "e", ddb_b, "w", "straight", "none", "arrow", "none", "#38bdf8", 2.0, "Put/Query", 0.5, 0.0, -10.0);
+scene.render_png(${arch_img}, 920, 360, 1);
+end _dsl_
+let arch_dslb = path_join(state_dir, "arch.dslb");
+savedsl(arch, arch_dslb);
+assert(system(concat(dsl_cli(arch), ["--dsl", arch_dslb]), 60000).code == 0);
+
+let plot = _dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
+plot.png(${plot_img}, 860, 480);
+plot.cmd("set datafile separator ','");
+plot.cmd("set title 'Scenario 04 (lmcloud): Guestbook POST vs GET Latency (ms)' noenhanced");
+plot.cmd("set yrange [0:*]; set offsets 0,0,graph 0.15,0; set grid y; unset key; set style fill solid 0.85; set boxwidth 0.55");
+plot.cmd("set ylabel 'Latency (ms)'");
+plot.cmd("plot '" + ${csv_path} + "' every ::1 using 0:2:xtic(1) with boxes lc rgb '#38bdf8', '' every ::1 using 0:2:(sprintf('%.2f ms',$2)) with labels offset 0,0.8");
+plot.close();
+end _dsl_
+let plot_dslb = path_join(state_dir, "plot.dslb");
+savedsl(plot, plot_dslb);
+assert(system(concat(dsl_cli(plot), ["--dsl", plot_dslb]), 60000).code == 0);
+
+if (stack_dir != ".") {
+  mkdir(path_join(stack_dir, "images"));
+  write_file(path_join(stack_dir, arch_img), read_file(arch_img));
+  write_file(path_join(stack_dir, plot_img), read_file(plot_img));
+}
+println("ok - scenario 04 test.lms passed in " + str(now() - t0) + " ms");
+println("estimated cost: $0.0000");

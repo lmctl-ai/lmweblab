@@ -1,0 +1,6 @@
+metric,ms
+cold start ms,1.602
+warm invoke ms,0.285
+load p50 ms,0.178886
+load p95 ms,0.563609
+load p99 ms,0.563609

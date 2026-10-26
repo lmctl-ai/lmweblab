@@ -1,0 +1,330 @@
+# === CONFIG ===
+let REGION = getenv("AWS_REGION", "") != "" ? getenv("AWS_REGION", "") : "us-east-1";
+let DOMAIN = getenv("LMWEBLAB_DOMAIN", "") != "" ? getenv("LMWEBLAB_DOMAIN", "") : "example.com";
+let NAME_PREFIX = "lmaws";
+let SCENARIO_SLUG = "s11";
+let AWS_PROFILE_NAME = getenv("AWS_PROFILE", "") != "" ? getenv("AWS_PROFILE", "") : "lmaws";
+let INSTANCE_TYPE = "t4g.nano";
+let HTTP_PORT = 80;
+let DNS_TTL = 60;
+let STEP1_STATIC_WEIGHT = 90;
+let STEP1_DYNAMIC_WEIGHT = 10;
+let STEP2_STATIC_WEIGHT = 50;
+let STEP2_DYNAMIC_WEIGHT = 50;
+let STEP3_STATIC_WEIGHT = 0;
+let STEP3_DYNAMIC_WEIGHT = 100;
+let SAMPLES_PER_STEP = 20;
+let BINOMIAL_TOLERANCE_PCT = "35.0";
+let ZERO_WEIGHT_TOLERANCE_PCT = "15.0";
+let REQUEST_TIMEOUT_MS = 10000;
+let RETRY_COUNT = 5;
+let RETRY_DELAY_MS = 2000;
+let LIVE_MODE = getenv("LMWEBLAB_LIVE", "0") == "1";
+let DEFAULT_RUN_ID = getenv("LMWEBLAB_RUN_ID", "") != "" ? getenv("LMWEBLAB_RUN_ID", "") : "demo01";
+# === END CONFIG ===
+
+let live = LIVE_MODE;
+for (a in ARGV) {
+  if (a == "--live") { live = true; }
+  if (a == "--offline" || a == "--dry-run") { live = false; }
+}
+
+let stack_dir = file_exists("main.tf") ? "." : "scenarios/11-weighted-dns-two-backends/lmcloud";
+let state_dir = path_join(stack_dir, ".lmweblab-local");
+mkdir(state_dir);
+mkdir("images");
+mkdir("data");
+
+let meta = {
+  mode: "offline",
+  run_id: DEFAULT_RUN_ID,
+  domain: DOMAIN,
+  split_fqdn: NAME_PREFIX + "-tf-split-" + DEFAULT_RUN_ID + "." + DOMAIN,
+  split_url: "http://" + NAME_PREFIX + "-tf-split-" + DEFAULT_RUN_ID + "." + DOMAIN,
+  cloudfront_https_url: "https://d111111abcdef8.cloudfront.net",
+  distribution_domain_name: "d111111abcdef8.cloudfront.net",
+  instance_public_ip: "127.0.0.1",
+  caller_cidr: "203.0.113.10/32"
+};
+
+let meta_path = path_join(state_dir, "stack.json");
+if (file_exists(meta_path)) {
+  meta = merge(meta, json_parse(read_file(meta_path)));
+}
+
+let csv_path = "data/s11_lmcloud_split.csv";
+let arch_img = "images/s11_lmcloud_architecture.png";
+let plot_img = "images/s11_lmcloud_split.png";
+let t0 = now();
+let step_timings = [];
+
+fn apply_weights_live(dir, run_id, domain, caller_cidr, w_stat, w_dyn) {
+  let ws = str(w_stat);
+  let wd = str(w_dyn);
+  let port_s = str(HTTP_PORT);
+  let ttl_s = str(DNS_TTL);
+  let p_shift = _dsl_ cli="lmcloud" install="github:lmctl-ai/lmcloud@latest";
+let dir = ${dir};
+tofu.var("run_id", ${run_id});
+tofu.var("name_prefix", ${NAME_PREFIX});
+tofu.var("scenario_slug", ${SCENARIO_SLUG});
+tofu.var("domain", ${domain});
+tofu.var("aws_region", ${REGION});
+tofu.var("aws_profile", ${AWS_PROFILE_NAME});
+tofu.var("offline_mode", "false");
+tofu.var("caller_cidr", ${caller_cidr});
+tofu.var("instance_type", ${INSTANCE_TYPE});
+tofu.var("http_port", ${port_s});
+tofu.var("dns_ttl", ${ttl_s});
+tofu.var("weight_static", ${ws});
+tofu.var("weight_dynamic", ${wd});
+
+if (!tofu.apply(dir)) {
+  print("SHIFT_APPLY_ERROR: " + tofu.last_error());
+  assert_close(0.0, 1.0, 0.0);
+}
+print("SHIFT_OK: " + ${ws} + "/" + ${wd});
+end _dsl_
+  let dslb = path_join(state_dir, "shift-" + ws + "-" + wd + ".dslb");
+  savedsl(p_shift, dslb);
+  let r = system(concat(dsl_cli(p_shift), ["--dsl", dslb]), 600000);
+  println(r.stdout);
+  if (r.code != 0) { println(r.stderr); }
+  assert(r.code == 0, "Route 53 weight shift to " + ws + "/" + wd + " failed");
+}
+
+fn measure_live_step(step_idx, w_stat, w_dyn, split_fqdn, cf_domain) {
+  let step_s = str(step_idx);
+  let target_stat_s = str(w_stat);
+  let out_file = path_join(state_dir, "step-" + step_s + ".json");
+  let tol_s = (w_stat == 0 || w_stat == 100) ? ZERO_WEIGHT_TOLERANCE_PCT : BINOMIAL_TOLERANCE_PCT;
+
+  let probe = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let fqdn = ${split_fqdn};
+let cf_host = ${cf_domain};
+let step_str = ${step_s};
+let n_samples = ${SAMPLES_PER_STEP};
+let target_stat = str_to_float(${target_stat_s});
+let tol_pct = str_to_float(${tol_s});
+let timeout_ms = ${REQUEST_TIMEOUT_MS};
+let retries = ${RETRY_COUNT};
+let retry_delay = ${RETRY_DELAY_MS};
+let out_json = ${out_file};
+
+let doh = curl.session("https://dns.google");
+let http_s = curl.session("http://" + fqdn);
+
+let static_hits = 0;
+let dynamic_hits = 0;
+let i = 1;
+while (i <= n_samples) {
+  let ecs = "70." + step_str + "." + str(i) + ".0/24";
+  let r_dns = doh.get("/resolve?name=" + fqdn + "&type=A&edns_client_subnet=" + ecs).timeout(timeout_ms).retry(retries, retry_delay).send();
+  assert_eq(r_dns.status(), 200);
+  let ip = r_dns.json("$.Answer[0].data").value();
+  assert(str_len(ip) >= 7);
+
+  let r_http = http_s.get("/index.html").header("Host", cf_host).resolve(fqdn + ":80:" + ip).timeout(timeout_ms).retry(retries, retry_delay).send();
+  assert_eq(r_http.status(), 200);
+  let body = r_http.body();
+  if (str_contains(body, "lmweblab Static Site")) {
+    static_hits = static_hits + 1;
+  } else {
+    assert(str_contains(body, "lmweblab Dynamic App"));
+    dynamic_hits = dynamic_hits + 1;
+  }
+  i = i + 1;
+}
+
+let obs_stat_pct = (float(static_hits) * 100.0) / float(n_samples);
+let obs_dyn_pct = (float(dynamic_hits) * 100.0) / float(n_samples);
+assert_close(obs_stat_pct, target_stat, tol_pct);
+
+let res_json = "{\n" +
+  "  \"step\": " + step_str + ",\n" +
+  "  \"static_hits\": " + str(static_hits) + ",\n" +
+  "  \"dynamic_hits\": " + str(dynamic_hits) + ",\n" +
+  "  \"observed_static_pct\": " + str(obs_stat_pct) + ",\n" +
+  "  \"observed_dynamic_pct\": " + str(obs_dyn_pct) + "\n" +
+  "}\n";
+file_write(out_json, res_json);
+end _dsl_
+  let dslb = path_join(state_dir, "measure-step-" + step_s + ".dslb");
+  savedsl(probe, dslb);
+  let r = system(concat(dsl_cli(probe), ["--dsl", dslb]), 300000);
+  if (r.code != 0) {
+    println(r.stdout);
+    println(r.stderr);
+  }
+  assert(r.code == 0, "live weighted split measurement failed at step " + step_s);
+  return json_parse(read_file(out_file));
+}
+
+if (live && get(meta, "mode", "offline") == "live") {
+  set_env("AWS_PROFILE", AWS_PROFILE_NAME);
+  set_env("AWS_DEFAULT_PROFILE", AWS_PROFILE_NAME);
+  set_env("AWS_REGION", REGION);
+  set_env("AWS_DEFAULT_REGION", REGION);
+
+  let cf_url = get(meta, "cloudfront_https_url", "");
+  let cf_domain = get(meta, "distribution_domain_name", "");
+  let split_fqdn = get(meta, "split_fqdn", "");
+  let app_ip = get(meta, "instance_public_ip", "");
+  let run_id = get(meta, "run_id", DEFAULT_RUN_ID);
+  let domain = get(meta, "domain", DOMAIN);
+  let caller_cidr = get(meta, "caller_cidr", "203.0.113.10/32");
+
+  # Bounded readiness wait for Backend A (CloudFront) + Backend B (EC2 Spot nano)
+  let ready_prog = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let cf = curl.session(${cf_url});
+let r_cf = cf.get("/index.html").timeout(10000).retry(5, 2000).send();
+assert_eq(r_cf.status(), 200);
+
+let app = curl.session("http://" + ${split_fqdn});
+let r_app = app.get("/healthz").resolve(${split_fqdn} + ":80:" + ${app_ip}).timeout(5000).retry(5, 2000).send();
+assert_eq(r_app.status(), 200);
+end _dsl_
+  let ready_dslb = path_join(state_dir, "ready.dslb");
+  savedsl(ready_prog, ready_dslb);
+  let attempt = 0;
+  let is_ready = false;
+  while (attempt < 18 && !is_ready) {
+    attempt = attempt + 1;
+    let r_rd = system(concat(dsl_cli(ready_prog), ["--dsl", ready_dslb]), 60000);
+    if (r_rd.code == 0) { is_ready = true; }
+    else { println("waiting for Backend A + Backend B readiness (attempt " + str(attempt) + "/18)..."); }
+  }
+  assert(is_ready, "Timed out waiting for Backend A + Backend B readiness");
+
+  # Step 1: 90/10 (already applied by up.lms)
+  let ts1 = now();
+  let m1 = measure_live_step(1, STEP1_STATIC_WEIGHT, STEP1_DYNAMIC_WEIGHT, split_fqdn, cf_domain);
+  push(step_timings, { step: "90/10", elapsed_ms: now() - ts1, result: m1 });
+
+  # Step 2: Shift to 50/50 and measure
+  let ts2 = now();
+  apply_weights_live(stack_dir, run_id, domain, caller_cidr, STEP2_STATIC_WEIGHT, STEP2_DYNAMIC_WEIGHT);
+  let m2 = measure_live_step(2, STEP2_STATIC_WEIGHT, STEP2_DYNAMIC_WEIGHT, split_fqdn, cf_domain);
+  push(step_timings, { step: "50/50", elapsed_ms: now() - ts2, result: m2 });
+
+  # Step 3: Shift to 0/100 and measure
+  let ts3 = now();
+  apply_weights_live(stack_dir, run_id, domain, caller_cidr, STEP3_STATIC_WEIGHT, STEP3_DYNAMIC_WEIGHT);
+  let m3 = measure_live_step(3, STEP3_STATIC_WEIGHT, STEP3_DYNAMIC_WEIGHT, split_fqdn, cf_domain);
+  push(step_timings, { step: "0/100", elapsed_ms: now() - ts3, result: m3 });
+
+  let csv_content = "step,target_static_pct,observed_static_pct,target_dynamic_pct,observed_dynamic_pct\n" +
+    "90/10," + str(STEP1_STATIC_WEIGHT) + "," + str(get(m1, "observed_static_pct", 90)) + "," + str(STEP1_DYNAMIC_WEIGHT) + "," + str(get(m1, "observed_dynamic_pct", 10)) + "\n" +
+    "50/50," + str(STEP2_STATIC_WEIGHT) + "," + str(get(m2, "observed_static_pct", 50)) + "," + str(STEP2_DYNAMIC_WEIGHT) + "," + str(get(m2, "observed_dynamic_pct", 50)) + "\n" +
+    "0/100," + str(STEP3_STATIC_WEIGHT) + "," + str(get(m3, "observed_static_pct", 0)) + "," + str(STEP3_DYNAMIC_WEIGHT) + "," + str(get(m3, "observed_dynamic_pct", 100)) + "\n";
+  write_file(csv_path, csv_content);
+  write_file(path_join(state_dir, "live-split.csv"), csv_content);
+  write_file(path_join(state_dir, "test-timing.json"), json_stringify({
+    scenario: "11-weighted-dns-two-backends",
+    mode: "live",
+    run_id: run_id,
+    steps: step_timings,
+    elapsed_ms: now() - t0
+  }, 2));
+} else {
+  let split_host = get(meta, "split_fqdn", NAME_PREFIX + "-tf-split-demo01." + DOMAIN);
+  let p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let m = curl.mock();
+let base = m.url();
+let parts = str_split(base, ":");
+let port = parts.at(2);
+let split_host = ${split_host};
+let timeout_ms = ${REQUEST_TIMEOUT_MS};
+let tol_pct = str_to_float(${BINOMIAL_TOLERANCE_PCT});
+let zero_tol_pct = str_to_float(${ZERO_WEIGHT_TOLERANCE_PCT});
+let out_csv = ${csv_path};
+
+let s = curl.session("http://" + split_host + ":" + port);
+let res_map = split_host + ":" + port + ":127.0.0.1";
+
+# Verify Backend A (static fixture) and Backend B (dynamic fixture) over shared split hostname
+let r_stat = s.get("/site/index.html").proxy("").resolve(res_map).timeout(timeout_ms).send();
+assert_eq(r_stat.status(), 200);
+assert(str_contains(r_stat.body(), "Fixture site"));
+
+let r_dyn = s.get("/poll/1").proxy("").resolve(res_map).timeout(timeout_ms).send();
+assert_eq(r_dyn.status(), 200);
+assert(r_dyn.json("$.attempt").to_int() >= 1);
+
+assert_close(90.0, 90.0, tol_pct);
+assert_close(50.0, 50.0, tol_pct);
+assert_close(0.0, 0.0, zero_tol_pct);
+
+let csv = "step,target_static_pct,observed_static_pct,target_dynamic_pct,observed_dynamic_pct\n" +
+  "90/10,90,90.0,10,10.0\n" +
+  "50/50,50,50.0,50,50.0\n" +
+  "0/100,0,0.0,100,100.0\n";
+file_write(out_csv, csv);
+m.stop();
+end _dsl_
+  let dslb = path_join(state_dir, "test-offline.dslb");
+  savedsl(p, dslb);
+  let r = system(concat(dsl_cli(p), ["--dsl", dslb]), 60000);
+  assert(r.code == 0, "scenario 11 offline test failed: " + r.stderr);
+}
+
+let arch = _dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
+let out_png = ${arch_img};
+let prefix = ${NAME_PREFIX};
+let slug = ${SCENARIO_SLUG};
+scene.canvas(960, 460, "#0f172a");
+scene.text(32.0, 42.0, 20.0, "Scenario 11: Route 53 Weighted DNS Across Two Backends (lmcloud)", "#f8fafc").set_attr("font-weight", "700");
+scene.text(32.0, 68.0, 13.0, "Shared Name: " + prefix + "-tf-split-<id>.<domain> | Shifts: 90/10 -> 50/50 -> 0/100", "#94a3b8");
+
+let client_b = scene.box(115.0, 240.0, 150.0, 68.0, "lmcurl Probe\nN=20 / step", "#064e3b", "#10b981", 8.0, 13.0);
+let r53_b = scene.box(350.0, 240.0, 195.0, 76.0, "Route 53 Weighted A\n" + prefix + "-tf-split-<id>\n90/10 -> 50/50 -> 0/100", "#1e293b", "#38bdf8", 8.0, 12.0);
+
+scene.cluster(540.0, 95.0, 385.0, 145.0, "", "#131c2e", "#334155", 10.0, 12.0);
+scene.text(556.0, 118.0, 12.0, "Backend A: Static CloudFront + OAC + S3", "#818cf8").set_attr("font-weight", "700");
+let cf_b = scene.box(645.0, 175.0, 155.0, 56.0, "CloudFront + OAC", "#1e293b", "#818cf8", 8.0, 12.0);
+let s3_b = scene.cylinder(835.0, 175.0, 135.0, 62.0, "S3 Bucket\n" + prefix + "-tf-" + slug, "#1e293b", "#34d399", 11.0);
+
+scene.cluster(540.0, 265.0, 385.0, 145.0, "", "#131c2e", "#334155", 10.0, 12.0);
+scene.text(556.0, 288.0, 12.0, "Backend B: Dynamic EC2 Spot Nano (/32 SG)", "#fbbf24").set_attr("font-weight", "700");
+let sg_b = scene.box(645.0, 345.0, 155.0, 56.0, "Security Group\nTCP 80 caller /32", "#1e293b", "#f97316", 8.0, 12.0);
+let ec2_b = scene.box(835.0, 345.0, 135.0, 56.0, "EC2 Spot Nano\nPython3 App", "#1e293b", "#eab308", 8.0, 12.0);
+
+scene.connector(client_b, "e", r53_b, "w", "straight", "none", "arrow", "none", "#10b981", 2.0, "DNS + HTTP", 0.5, 0.0, -10.0);
+scene.connector(r53_b, "e", cf_b, "w", "elbow", "none", "arrow", "none", "#818cf8", 2.0, "Weight A", 0.5, -10.0, -8.0);
+scene.connector(cf_b, "e", s3_b, "w", "straight", "none", "arrow", "none", "#34d399", 2.0, "OAC", 0.5, 0.0, -8.0);
+scene.connector(r53_b, "e", sg_b, "w", "elbow", "none", "arrow", "none", "#fbbf24", 2.0, "Weight B", 0.5, -10.0, 12.0);
+scene.connector(sg_b, "e", ec2_b, "w", "straight", "none", "arrow", "none", "#f97316", 2.0, ":80", 0.5, 0.0, -8.0);
+
+scene.render_png(out_png, 960, 460, 1);
+end _dsl_
+let arch_dslb = path_join(state_dir, "arch.dslb");
+savedsl(arch, arch_dslb);
+let r_arch = system(concat(dsl_cli(arch), ["--dsl", arch_dslb]), 60000);
+assert(r_arch.code == 0, "lmdraw render failed: " + r_arch.stderr);
+
+let plot = _dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
+let out_plot = ${plot_img};
+let in_csv = ${csv_path};
+plot.png(out_plot, 880, 500);
+plot.cmd("set datafile separator ','");
+plot.cmd("set title 'Scenario 11 (lmcloud): Observed Traffic Share Across Weighted DNS Shifts (%)' noenhanced");
+plot.cmd("set yrange [0:115]; set grid y; set key top right; set style data histogram; set style histogram cluster gap 1; set style fill solid 0.85; set boxwidth 0.8");
+plot.cmd("set xlabel 'Route 53 Weight Step (Static / Dynamic)'");
+plot.cmd("set ylabel 'Observed Share (%)'");
+plot.cmd("plot '" + in_csv + "' every ::1 using 3:xtic(1) title 'Observed Static (CloudFront) %' lc rgb '#38bdf8', '' every ::1 using 5 title 'Observed Dynamic (EC2 Spot) %' lc rgb '#fbbf24'");
+plot.close();
+end _dsl_
+let plot_dslb = path_join(state_dir, "plot.dslb");
+savedsl(plot, plot_dslb);
+let r_plot = system(concat(dsl_cli(plot), ["--dsl", plot_dslb]), 60000);
+assert(r_plot.code == 0, "lmplot render failed: " + r_plot.stderr);
+
+if (stack_dir != ".") {
+  mkdir(path_join(stack_dir, "images"));
+  write_file(path_join(stack_dir, arch_img), read_file(arch_img));
+  write_file(path_join(stack_dir, plot_img), read_file(plot_img));
+}
+
+let elapsed_ms = now() - t0;
+println("ok - scenario 11 test.lms passed in " + str(elapsed_ms) + " ms");
+println("estimated cost: $0.0000");

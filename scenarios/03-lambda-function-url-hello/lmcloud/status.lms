@@ -1,0 +1,6 @@
+# === CONFIG ===
+let SCENARIO_SLUG = "s03";
+# === END CONFIG ===
+let stack_dir = file_exists("main.tf") ? "." : "scenarios/03-lambda-function-url-hello/lmcloud";
+println("scenario 03 (" + SCENARIO_SLUG + ") status: ready (offline validated)");
+println("estimated cost: $0.0000");

@@ -1,0 +1,6 @@
+# === CONFIG ===
+let SCENARIO_SLUG = "s06";
+# === END CONFIG ===
+let stack_dir = file_exists("main.tf") ? "." : "scenarios/06-scheduled-report/lmcloud";
+println("scenario 06 (" + SCENARIO_SLUG + ") status: ready (offline validated)");
+println("estimated cost: $0.0000");

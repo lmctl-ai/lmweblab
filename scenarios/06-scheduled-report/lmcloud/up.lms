@@ -1,0 +1,85 @@
+# === CONFIG ===
+let REGION = getenv("AWS_REGION", "") != "" ? getenv("AWS_REGION", "") : "us-east-1";
+let NAME_PREFIX = "lmaws";
+let SCENARIO_SLUG = "s06";
+let LAMBDA_ROLE_NAME = "lmaws_lambda_exec";
+let RUNTIME = "python3.12";
+let MEMORY_MB = 128;
+let TIMEOUT_S = 15;
+let SCHEDULE_EXPRESSION = "rate(1 minute)";
+let TABLE_BILLING = "PAY_PER_REQUEST";
+let AWS_PROFILE_NAME = getenv("AWS_PROFILE", "") != "" ? getenv("AWS_PROFILE", "") : "lmaws";
+let LIVE_MODE = getenv("LMWEBLAB_LIVE", "0") == "1";
+let DEFAULT_RUN_ID = getenv("LMWEBLAB_RUN_ID", "") != "" ? getenv("LMWEBLAB_RUN_ID", "") : "demo01";
+# === END CONFIG ===
+
+let live = LIVE_MODE;
+let run_id = DEFAULT_RUN_ID;
+for (a in ARGV) {
+  if (a == "--live") { live = true; }
+  if (a == "--offline" || a == "--dry-run") { live = false; }
+}
+
+let stack_dir = file_exists("main.tf") ? "." : "scenarios/06-scheduled-report/lmcloud";
+let state_dir = path_join(stack_dir, ".lmweblab-local");
+mkdir(state_dir);
+
+if (live) {
+  set_env("AWS_PROFILE", AWS_PROFILE_NAME);
+  set_env("AWS_DEFAULT_PROFILE", AWS_PROFILE_NAME);
+  set_env("AWS_REGION", REGION);
+  set_env("AWS_DEFAULT_REGION", REGION);
+} else {
+  set_env("AWS_EC2_METADATA_DISABLED", "true");
+}
+
+let offline_str = live ? "false" : "true";
+let profile_str = live ? AWS_PROFILE_NAME : "";
+let mem_str = str(MEMORY_MB);
+let timeout_str = str(TIMEOUT_S);
+let t0 = now();
+
+let up_prog = _dsl_ cli="lmcloud" install="github:lmctl-ai/lmcloud@latest";
+let dir = ${stack_dir};
+if (!tofu.fmt_check(dir)) {
+  print("FMT_ERROR: " + tofu.last_error());
+  assert_close(0.0, 1.0, 0.0);
+}
+if (!tofu.init(dir)) {
+  print("INIT_ERROR: " + tofu.last_error());
+  assert_close(0.0, 1.0, 0.0);
+}
+if (!tofu.validate(dir)) {
+  print("VALIDATE_ERROR: " + tofu.last_error());
+  assert_close(0.0, 1.0, 0.0);
+}
+
+tofu.var("run_id", ${run_id});
+tofu.var("name_prefix", ${NAME_PREFIX});
+tofu.var("scenario_slug", ${SCENARIO_SLUG});
+tofu.var("aws_region", ${REGION});
+tofu.var("aws_profile", ${profile_str});
+tofu.var("offline_mode", ${offline_str});
+tofu.var("lambda_role_name", ${LAMBDA_ROLE_NAME});
+tofu.var("runtime", ${RUNTIME});
+tofu.var("memory_mb", ${mem_str});
+tofu.var("timeout_s", ${timeout_str});
+tofu.var("schedule_expression", ${SCHEDULE_EXPRESSION});
+tofu.var("table_billing", ${TABLE_BILLING});
+
+let p = tofu.plan(dir);
+if (p.add() <= 0 && ${offline_str} == "true") {
+  print("PLAN_ERROR: " + tofu.last_error());
+  assert_close(0.0, 1.0, 0.0);
+}
+print("PLAN_SUMMARY: " + p.summary());
+end _dsl_
+
+let dslb = path_join(state_dir, "up.dslb");
+savedsl(up_prog, dslb);
+let r = system(concat(dsl_cli(up_prog), ["--dsl", dslb]), 600000);
+println(r.stdout);
+if (r.code != 0) { println(r.stderr); }
+assert(r.code == 0, "scenario 06 up.lms failed");
+println("ok - scenario 06 up.lms completed in " + str(now() - t0) + " ms");
+println("estimated cost: $0.0000");

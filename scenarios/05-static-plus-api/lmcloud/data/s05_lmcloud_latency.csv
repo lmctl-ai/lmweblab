@@ -1,0 +1,3 @@
+metric,ms
+static / ms,0.286
+dynamic /api/* ms,0.115
