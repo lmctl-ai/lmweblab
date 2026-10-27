@@ -25,7 +25,13 @@ def main() -> None:
 
     class FakeTable:
         def put_item(self, *, Item): rows.append(Item)
-        def scan(self, *, Limit): return {"Items": rows[:Limit]}
+        def scan(self, *, Limit, **kwargs):
+            start = kwargs.get("ExclusiveStartKey", {}).get("pk", "")
+            index = next((i + 1 for i, row in enumerate(rows) if row.get("pk") == start), 0)
+            page = rows[index : index + Limit]
+            out = {"Items": page}
+            if index + Limit < len(rows): out["LastEvaluatedKey"] = {"pk": page[-1]["pk"]}
+            return out
 
     class FakeDynamo:
         def Table(self, _name): return FakeTable()
@@ -41,8 +47,12 @@ def main() -> None:
     assert first["statusCode"] == 201
     body = json.loads(first["body"])
     assert "&lt;script&gt;" in body["entry"]["message"]
+    guest.handler({"requestContext": {"http": {"method": "POST"}}, "body": json.dumps({"author": "B", "message": "second"})}, None)
     page = guest.handler({"requestContext": {"http": {"method": "GET"}}, "queryStringParameters": {"limit": "1", "offset": "0"}}, None)
-    assert page["statusCode"] == 200 and json.loads(page["body"])["total"] == 1
+    page_body = json.loads(page["body"])
+    assert page["statusCode"] == 200 and page_body["total"] == 1 and page_body["next_cursor"]
+    second_page = guest.handler({"requestContext": {"http": {"method": "GET"}}, "queryStringParameters": {"limit": "1", "cursor": page_body["next_cursor"]}}, None)
+    assert json.loads(second_page["body"])["items"][0]["message"] == "second"
 
     api = load(ROOT / "05-static-plus-api/lmaws/assets/api.py", "api")
     response = api.handler({"rawPath": "/api/info", "queryStringParameters": {"q": "fixture"}}, None)

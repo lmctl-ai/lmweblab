@@ -15,7 +15,7 @@ let name = NAME_PREFIX + "_" + SCENARIO_SLUG + "_" + run_id;
 let p = _dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
 let cloud = aws.demo();
 let web=cloud.web_stack(${run_id},"example.com",${state_dir+"/web.json"}); let serverless=cloud.serverless_stack(${run_id},"example.com",${state_dir+"/serverless.json"});
-let bucket=web.step("bucket","{\"site_dir\":\"../../../shared/site\"}"); let cert=web.step("certificate","{}"); let lambda_row=serverless.step("lambda","{\"runtime\":\""+${RUNTIME}+"\",\"handler\":\"handler.handler\",\"source_file\":\"assets/handler.py\",\"role\":\""+${ROLE}+"\",\"memory_mb\":"+str(${MEMORY_MB})+",\"timeout_s\":"+str(${TIMEOUT_S})+"}"); let dist=web.step("lambda_distribution","{\"function_name\":\""+lambda_row.get("lambda_name")+"\",\"lambda_url\":\""+lambda_row.get("lambda_url")+"\",\"mixed\":false}"); let dns=web.step("dns_site","{}");
+let cert=web.step("certificate","{}"); let lambda_row=serverless.step("lambda","{\"runtime\":\""+${RUNTIME}+"\",\"handler\":\"handler.handler\",\"source_file\":\"assets/handler.py\",\"role\":\""+${ROLE}+"\",\"memory_mb\":"+str(${MEMORY_MB})+",\"timeout_s\":"+str(${TIMEOUT_S})+"}"); let dist=web.step("lambda_distribution","{\"function_name\":\""+lambda_row.get("lambda_name")+"\",\"lambda_url\":\""+lambda_row.get("lambda_url")+"\",\"mixed\":false}"); let dns=web.step("dns_site","{}");
 file_write(${state_dir + "/state.json"}, "{\"scenario\":\"03\",\"run_id\":\"" + ${run_id} + "\",\"name\":\"" + lambda_row.get("lambda_name") + "\",\"endpoint\":\"http://dfixture.cloudfront.net/\",\"role\":\"" + ${ROLE} + "\"}"); file_write(${state_dir + "/up.json"}, "{\"web\":"+dns.json()+",\"serverless\":"+lambda_row.json()+"}");
 end _dsl_
 savedsl(p, state_dir + "/up.dslb");

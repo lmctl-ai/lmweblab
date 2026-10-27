@@ -4,10 +4,14 @@ import os
 import time
 import urllib.request
 import uuid
+import base64
 
 TABLE_NAME = os.environ.get("TABLE_NAME", "lmaws_tf_s04_table_demo01")
 TTL_SECONDS = int(os.environ.get("TTL_SECONDS", "3600"))
 MEM_ENTRIES = []
+
+def json_default(value):
+    return float(value) if hasattr(value, "as_tuple") else str(value)
 if os.environ.get("LMWEBLAB_OFFLINE") == "1":
     TABLE = None
 else:
@@ -23,7 +27,7 @@ def handler(event, context):
     qs = (event or {}).get("queryStringParameters") or {}
     try:
         limit = max(1, min(50, int(qs.get("limit", "10"))))
-        offset = max(0, int(qs.get("offset", "0")))
+        cursor = qs.get("cursor", "")
     except (TypeError, ValueError):
         return {"statusCode": 400, "body": json.dumps({"ok": False, "error": "invalid pagination"})}
 
@@ -51,18 +55,28 @@ def handler(event, context):
         return {
             "statusCode": 201,
             "headers": {"Content-Type": "application/json; charset=utf-8"},
-            "body": json.dumps({"ok": True, "table": TABLE_NAME, "entry": item}),
+            "body": json.dumps({"ok": True, "table": TABLE_NAME, "entry": item}, default=json_default),
         }
 
     now_s = int(time.time())
     if TABLE is not None:
-        all_items = TABLE.scan(Limit=min(50, offset + limit)).get("Items", [])
-        page = [x for x in all_items if int(x.get("expires_at", 0)) > now_s][offset : offset + limit]
-        total = len([x for x in all_items if int(x.get("expires_at", 0)) > now_s])
+        start = None
+        if cursor:
+            try:
+                start = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
+            except Exception:
+                return {"statusCode": 400, "body": json.dumps({"ok": False, "error": "invalid cursor"})}
+        response = TABLE.scan(Limit=limit, **({"ExclusiveStartKey": start} if start else {}))
+        page = [x for x in response.get("Items", []) if int(x.get("expires_at", 0)) > now_s]
+        next_key = response.get("LastEvaluatedKey")
+        next_cursor = base64.urlsafe_b64encode(json.dumps(next_key).encode()).decode() if next_key else ""
+        total = len(page)
     else:
         now_s = int(time.time())
         live = [x for x in MEM_ENTRIES if int(x.get("expires_at", 0)) > now_s]
+        offset = int(cursor or "0") if cursor else 0
         page = live[offset : offset + limit]
+        next_cursor = str(offset + limit) if offset + limit < len(live) else ""
         total = len(live)
     return {
         "statusCode": 200,
@@ -72,9 +86,9 @@ def handler(event, context):
                 "ok": True,
                 "table": TABLE_NAME,
                 "total": total,
-                "offset": offset,
                 "limit": limit,
                 "items": page,
+                "next_cursor": next_cursor,
             }
-        ),
+        , default=json_default),
     }
