@@ -1,0 +1,82 @@
+{
+  "scenario": "07",
+  "engine": "lmaws",
+  "profile": "lmaws",
+  "region": "us-east-1",
+  "functional_tests_passed": true,
+  "initial_all_exit": 1,
+  "final_repair_exit": 0,
+  "up_s": 78.192,
+  "test_s": 101.772,
+  "down_initial_s": 47.932,
+  "down_recovery_s": 623.014,
+  "final_audit_s": 15.471,
+  "first_http_ms": 651.207,
+  "warm_http_ms": 232.619,
+  "p95_ms": 458.593935,
+  "load_requests": 16,
+  "load_error_rate": 0,
+  "metric_target": "Function URL root",
+  "job_completion_s": 6.693,
+  "poison_to_dlq_s": 91.752,
+  "campaign_estimated_usd": "0.01268908",
+  "shared_audit_estimated_usd": "0.00001080",
+  "shared_audit_requests": 16,
+  "attempts": [
+    {
+      "selected": false,
+      "initial_all_exit": 1,
+      "final_repair_exit": 0,
+      "repair_s": 39.801,
+      "sdk_requests": 133,
+      "estimated_usd": "0.00004640",
+      "leftovers": 0,
+      "note": "redacted redrive ARN and invalid clear value; no functions/mapping created; cleanup recovered"
+    },
+    {
+      "selected": true,
+      "initial_all_exit": 1,
+      "final_repair_exit": 0,
+      "repair_s": 623.014,
+      "sdk_requests": 452,
+      "estimated_usd": "0.01263188",
+      "leftovers": 0,
+      "note": "functional tests passed; post-delete GetEventSourceMapping denied; cleanup recovered"
+    }
+  ],
+  "leftovers": 0,
+  "event_source_mappings": 0,
+  "default_lambda_log_groups": 0,
+  "mapping_tags_at_creation": [
+    "lmaws_test"
+  ],
+  "standalone_mapping_tagging": false,
+  "iam_or_profile_edits": false,
+  "role_modified": false,
+  "functional_run_repeated_after_denial": false,
+  "denial": {
+    "action": "lambda:GetEventSourceMapping",
+    "observed_resource": "*",
+    "phase": "post-delete polling",
+    "grant_resource_pattern": "arn:aws:lambda:us-east-1:*:event-source-mapping:*",
+    "grant_condition": {
+      "StringLike": {
+        "aws:ResourceTag/lmaws_test": "?*"
+      }
+    },
+    "mapping_absence_proved_by_list": true,
+    "condition_basis": "Lead-reported v7b and checked-in builder; active IAM not queried"
+  },
+  "cost_basis": "SDK request journals plus admitted 100 API requests/2MiB and 300 worker-delivery compute/log/SQS bounds; no free-tier deductions; conservative estimate, not invoice",
+  "cleanup_basis": "latest API/worker deletion timestamp plus ten-minute log-delivery settlement, then fresh provider inventory of both attempt namespaces",
+  "source_fixes": {
+    "lmweblab": "f78d61d",
+    "lmaws": [
+      "3ce8fb5",
+      "5bb969b",
+      "3b14634"
+    ]
+  },
+  "verification": "Linux JVM source host and local fake-only gates; no private workflow dispatch",
+  "selected_attempt_estimated_usd": "0.01263188"
+}

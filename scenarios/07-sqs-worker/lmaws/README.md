@@ -2,11 +2,23 @@
 
 ![Queue report](images/s07_lmaws_queue.png) — `lmctl https://raw.githubusercontent.com/lmctl-ai/lmweblab/main/scenarios/07-sqs-worker/lmaws/report.lms`
 
-Offline fake transport proves API enqueue, bounded worker completion, DynamoDB idempotency, and poison redrive to a DLQ after three receives. Running this example costs about `$0.0002` live, estimated from the local price table (prices vary by region).
+A Lambda URL enqueues work to an owned SQS queue. A tagged event-source mapping invokes the worker, which writes an idempotent DynamoDB receipt. A poison message fails three source deliveries and is routed to the DLQ. All committed pictures are synthetic.
 
+The live functional tests passed: job completion **6.693 s**, poison-to-DLQ **91.752 s**, API root p95 **458.6 ms**. The initial `all` command failed during a post-delete permission check; cleanup was repaired and a fresh provider audit verified **zero leftovers across both attempts**. No functional test was repeated after the denial.
 
-All five lifecycle entry points have editable CONFIG values for region, domain, name prefix, slug, prebuilt execution role, runtime, API/worker source, memory, timeout, TTL and the `$0.05` cap. Uppercase `let` is used because the installed LMScript parser rejects `const`. Run `lmctl all.lms --offline`, or up/test/status/down separately. The offline lifecycle takes seconds; live provisioning and three visibility-timeout deliveries can take minutes.
+Running this example costs about **$0.01263188** using the conservative host price table and admitted execution bounds; prices vary by region. The two-attempt campaign including repair/audit was **$0.01268908**, not an invoice. The default cap is $0.05. Offline cost is $0.00.
 
-Offline cost is **$0.0000**. All committed handler fixtures and pictures are synthetic. `all.lms` always attempts teardown; `down.lms` is repeatable and audits the simulated queues, mapping, functions/log groups and table independently. The execution role remains prebuilt; this scenario never creates IAM roles. Functions use custom `lmaws_<slug>_logs_<run>` groups.
+Run from this directory with a current lmaws main source build on PATH; the released v0.1.19 does not contain the v7b/current worker fixes. Building/testing lmaws creates `target/jvm-bin`, which can be put on PATH. Every lifecycle file exposes CONFIG for region, namespace, prebuilt role, runtime, source, memory, timeout and cap.
 
-Live validation awaits the Lead go and the event-source mapping grant in [IAM_REMAINING.md](../../IAM_REMAINING.md). The reviewed v6 function-only Lambda permission does not cover mapping ARNs or `CreateEventSourceMapping`. Live commands require `AWS_PROFILE=lmaws`, a fresh explicit `--run-id`, and `LMWEBLAB_REMAINING_LIVE_GO=1` set only after the Lead go. No real AWS calls were made in this work.
+```sh
+lmctl all.lms --offline
+# Only for an explicitly authorized live run:
+export AWS_PROFILE=lmaws AWS_REGION=us-east-1
+export LMWEBLAB_REMAINING_LIVE_GO=1 LMWEBLAB_WORKER_LIVE_GO=1
+RUN_ID=$(python3 -c 'import secrets; print(secrets.token_hex(5))')
+lmctl all.lms --live --run-id "$RUN_ID"
+```
+
+`up.lms`, `test.lms`, `status.lms` and `down.lms` accept the same mode/run arguments. Up persists mapping creation then waits for Enabled. Mapping tags are only `lmaws_test` at creation; existing mappings are never tagged/adopted. Down removes the mapping before its functions/queues/table, waits for delayed logging using the later function deletion, and independently inventories the run. Raw state, receipts and responses stay in ignored `.lmweblab-local/`.
+
+The denied action was `lambda:GetEventSourceMapping` on `*` during post-delete polling; the mapping was already absent. The client now uses a bounded exact-ARN list lookup for absence while preserving ownership checks for present mappings. Role, IAM and profiles were untouched. [Timings, condition context, failed attempts and cost basis](../../RESULTS.md#scenario-07-sqs-worker-live-tests-and-cleanup-recovery).

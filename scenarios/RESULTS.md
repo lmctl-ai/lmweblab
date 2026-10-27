@@ -56,7 +56,7 @@ New source APIs have actual SDK loopback transport tests for Lambda/EventBridge/
 
 ## Remaining lmaws scenarios: live verification
 
-Scenario 07 was excluded from this live GO; a separate authorization and confirmation of its mapping permissions are required. The authorized 08, 09, 10 and 12 campaign is complete.
+Scenario 07 was excluded from the earlier 08/09/10/12 campaign; its later authorization and verification are recorded below. The authorized 08, 09, 10 and 12 campaign is complete.
 
 | Scenario | Up / test / down including settlement (s) | p95 (ms) | Conservative estimate | Leftovers |
 |---|---:|---:|---:|---:|
@@ -65,7 +65,7 @@ Scenario 07 was excluded from this live GO; a separate authorization and confirm
 | 10 | 585.2 / 19.4 / 637.5 | 131.8 | $0.00364746 | **0** |
 | 12 | 323.3 / 208.3 / 432.0 | 142.8 | $0.00334755 | **0** |
 
-All four authorized lmaws scenarios passed live using only profile `lmaws`. Scenario 07 was not run live. Lambda functions used custom run-scoped log groups; down included the ten-minute final-log-delivery settlement. A fresh lmaws process then found zero leftovers across all eight attempt namespaces, including zero default Lambda log groups. The shared role, IAM, profiles and session files were untouched.
+All four authorized lmaws scenarios passed live using only profile `lmaws`. Scenario 07 was outside that earlier campaign; see its later verification below. Lambda functions used custom run-scoped log groups; down included the ten-minute final-log-delivery settlement. A fresh lmaws process then found zero leftovers across all eight attempt namespaces, including zero default Lambda log groups. The shared role, IAM, profiles and session files were untouched.
 
 The p95 targets are the Function URL root for 08/09 (4 VUs, 16 requests, five-second window), the CloudFront gallery object for 10 (same load bound), and the dynamic app health endpoint for 12 (8 VUs, 10 requests). Initial/warm Function URL timings and the separate gallery fetch timings are in the sanitized summary. These are different request paths, not a controlled engine benchmark.
 
@@ -95,3 +95,24 @@ Cleanup includes follow-up recovery/audit and post-delivery checks. Scenario 03'
 AWS can deliver Lambda logs 5–10 minutes after invocation. The final check ran after that window and found zero resources in all five attempt namespaces, including zero default `/aws/lambda/` groups. New `down` commands include bounded settlement. Only an exact group backed by the private run's creation receipt, provider creation timestamp and an absent function can have an empty tag set repaired; foreign-tagged, pre-existing or out-of-window groups are refused. IAM and the pre-created execution role were untouched. [AWS log-delivery guidance](https://docs.aws.amazon.com/lambda/latest/dg/monitoring-cloudwatchlogs.html).
 
 Campaign estimate: **$0.01723215**, including the failed load-window attempt, SDK request journals and recovery checks. The model reserves 100 HTTP requests/2 MiB, the configured Lambda memory/timeout, 16 KiB of logs per request, and 20 scheduled invocations. It ignores free-tier deductions and is a conservative estimate, not an invoice. [Lambda pricing](https://aws.amazon.com/lambda/pricing/), [CloudWatch pricing](https://aws.amazon.com/cloudwatch/pricing/). Public pictures stay synthetic; raw live responses and identifiers remain ignored/private.
+
+
+## Scenario 07 SQS worker: live tests and cleanup recovery
+
+The separately authorized run used only profile `lmaws` and the pre-created execution role under the Lead-reported v7b grant. The functional tests passed; the original `all` command returned **1** during cleanup. Teardown was repaired and independently verified empty across both attempts. No new functional run was started after the access denial.
+
+| Up (s) | Test (s) | Initial down / recovery / final audit (s) | API root p95 (ms) | Selected attempt estimate | Full campaign estimate | Leftovers |
+|---:|---:|---:|---:|---:|---:|---:|
+| 78.192 | 101.772 | 47.932 / 623.014 / 15.471 | 458.594 | $0.01263188 | $0.01268908 | **0** |
+
+The normal message produced its expected DynamoDB receipt in **6.693 s** end to end. The poison message was observed in the DLQ after **91.752 s**. First/warm API root HTTP latency was **651.207/232.619 ms**; the bounded load used four virtual users and sixteen requests, with zero errors. Idempotent duplicate delivery is covered by deterministic handler regressions; no duplicate AWS delivery is claimed.
+
+The first attempt exposed two SDK bugs before any function/mapping creation: display redaction inserted wildcards into the actual DLQ ARN, and redrive clearing sent an invalid empty JSON object. Wire serialization now preserves the ARN and clears the attribute with an empty string. That attempt was cleaned completely before a fresh run.
+
+During the later run, `DeleteEventSourceMapping` was accepted, then polling `lambda:GetEventSourceMapping` failed on resource **`*`** after the mapping disappeared. The v7b builder's `EsmOwn` resource pattern is `arn:aws:lambda:us-east-1:*:event-source-mapping:*`, with `StringLike: aws:ResourceTag/lmaws_test = ?*`. A permitted list call proved the mapping absent. Active IAM was not queried; this condition context comes from the Lead and checked-in builder.
+
+Deletion now validates account/region, looks up the exact ARN through a bounded account-wide list, checks ownership before deleting a present mapping, and polls list-based absence afterward. IAM, profiles and the role were unchanged. Mapping tags were supplied only at creation, with the single key `lmaws_test`; no existing mapping was tagged or adopted. The SDK also persists creation before readiness, waits for Enabled, reports foreign/untagged mappings, and settles logs from the later API/worker deletion.
+
+Recovery includes the ten-minute final-log-delivery settlement. The final independent lmaws audit found zero functions/URLs, mappings, queues/DLQ, tables and custom/default log groups in both run namespaces. Initial exit codes and recovery timings remain in [sanitized numeric evidence](lmaws-worker-results.json); raw bodies, messages, ARNs and identifiers stay private. Public pictures remain synthetic.
+
+Costs are conservative price-table estimates, not an invoice: SDK request journals plus 100 admitted API requests/2 MiB and up to 300 worker deliveries at configured memory/timeout, with log/SQS bounds and no free-tier deduction. The campaign total includes the first failed attempt, repairs and final inventory. Local gates passed on Linux/JVM; no private workflow was dispatched. Current lmaws main source is required; released v0.1.19 does not contain these fixes.

@@ -221,3 +221,18 @@ The existing lmcloud measurements above are the other coder's provider-backed ru
 | Scheduled reports | Only aws.events generates; HTTP reads do not increment; persisted counter and S3/DDB readback checked | See the committed lmcloud scenario implementation and measurements above |
 
 Native changes landed in lmaws: custom logging, Active wait, URL deletion, independent serverless inventory, persistent cumulative caps and snapshots, receipt-scoped late-log reconciliation, and a 10-minute post-delivery settlement check. The policy builder now retains the exact Lambda-only PassRole statement from v6. No IAM policy, profile or role was changed by this campaign. LMScript 0.2.426 still uses uppercase let; no compiler change or list splice was needed. lmcurl required a caller-side load-window correction, not a host change.
+
+
+## Scenario 07 SQS worker: live tests and cleanup recovery
+
+The separately authorized run used only profile `lmaws` and the pre-created execution role under the Lead-reported v7b grant. The functional tests passed; the original `all` command returned **1** during cleanup. Teardown was repaired and independently verified empty across both attempts. No new functional run was started after the access denial.
+
+| Up (s) | Test (s) | Initial down / recovery / final audit (s) | API root p95 (ms) | Selected attempt estimate | Full campaign estimate | Leftovers |
+|---:|---:|---:|---:|---:|---:|---:|
+| 78.192 | 101.772 | 47.932 / 623.014 / 15.471 | 458.594 | $0.01263188 | $0.01268908 | **0** |
+
+The lmaws path made ownership and phase receipts explicit. The awkward parts were service JSON accidentally passing through display redaction, mapping readiness/deletion waiters, and tag-scoped IAM masking a missing-object Get. The client now proves exact-ARN absence with permitted list calls; it keeps the existing mutation ownership checks and never expands policy or retags mappings.
+
+The original all-command failure is retained. Cleanup recovery is reported separately from provisioning/testing, so its duration includes log settlement but excludes the intervening diagnosis/build time; these are observations, not a deployment-engine benchmark. No lmcloud scenario 07 live rerun was performed here. Any Get-based waiter must account for this absence-authorization boundary; this campaign does not claim the other engine was affected.
+
+Fix commits: lmweblab `f78d61d`; lmaws `3ce8fb5` (readiness, receipts, worker settlement), `5bb969b` (redrive wire data), `3b14634` (missing-object list proof). [Full evidence and limits](RESULTS.md#scenario-07-sqs-worker-live-tests-and-cleanup-recovery).
