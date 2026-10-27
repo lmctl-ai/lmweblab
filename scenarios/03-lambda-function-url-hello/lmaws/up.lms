@@ -7,17 +7,16 @@ let MEMORY_MB = 128;
 let TIMEOUT_S = 10;
 let ROLE = "lmaws_lambda_exec";
 # === END CONFIG ===
+assert(getenv("LMWEBLAB_LIVE","0") != "1", "live deployment pending the Lambda role grant");
 let state_dir = ".lmweblab-local"; mkdir(state_dir);
-let run_id = getenv("LMWEBLAB_RUN_ID", "s03demo");
+let run_id = getenv("LMWEBLAB_RUN_ID", "cafe03");
 assert(regex_test(run_id, "^[a-z0-9]{4,32}$"));
 let name = NAME_PREFIX + "_" + SCENARIO_SLUG + "_" + run_id;
-let code = "def handler(event, context): return {'statusCode':200,'headers':{'content-type':'application/json'},'body':'{\\\"ok\\\":true,\\\"name\\\":\\\"" + name + "\\\"}'}";
 let p = _dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
 let cloud = aws.demo();
-let lambda = cloud.lambda_function(${name}, ${ROLE}, ${RUNTIME}, "handler.handler", ${code}, ${MEMORY_MB}, ${TIMEOUT_S});
-let endpoint = lambda.url("Scenario 03 demo Function URL is intentionally public for an offline API test");
-file_write(${state_dir + "/state.json"}, "{\"scenario\":\"03\",\"run_id\":\"" + ${run_id} + "\",\"name\":\"" + ${name} + "\",\"endpoint\":\"" + endpoint + "\",\"role\":\"" + ${ROLE} + "\"}");
-file_write(${state_dir + "/up.json"}, lambda.status().json());
+let web=cloud.web_stack(${run_id},"example.com",${state_dir+"/web.json"}); let serverless=cloud.serverless_stack(${run_id},"example.com",${state_dir+"/serverless.json"});
+let bucket=web.step("bucket","{\"site_dir\":\"../../../shared/site\"}"); let cert=web.step("certificate","{}"); let lambda_row=serverless.step("lambda","{\"runtime\":\""+${RUNTIME}+"\",\"handler\":\"handler.handler\",\"source_file\":\"assets/handler.py\",\"role\":\""+${ROLE}+"\",\"memory_mb\":"+str(${MEMORY_MB})+",\"timeout_s\":"+str(${TIMEOUT_S})+"}"); let dist=web.step("lambda_distribution","{\"function_name\":\""+lambda_row.get("lambda_name")+"\",\"lambda_url\":\""+lambda_row.get("lambda_url")+"\",\"mixed\":false}"); let dns=web.step("dns_site","{}");
+file_write(${state_dir + "/state.json"}, "{\"scenario\":\"03\",\"run_id\":\"" + ${run_id} + "\",\"name\":\"" + lambda_row.get("lambda_name") + "\",\"endpoint\":\"http://dfixture.cloudfront.net/\",\"role\":\"" + ${ROLE} + "\"}"); file_write(${state_dir + "/up.json"}, "{\"web\":"+dns.json()+",\"serverless\":"+lambda_row.json()+"}");
 end _dsl_
 savedsl(p, state_dir + "/up.dslb");
 let r = system(concat(dsl_cli(p), ["--dry-run", "--dsl", state_dir + "/up.dslb"]), 120000);
