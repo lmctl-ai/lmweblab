@@ -189,6 +189,8 @@ fn sa_weighted_test(o,state) {
   for(weight in [o.first_weight,o.middle_weight,o.final_weight]) {
     step=step+1;
     if(step>1){sa_step(o,"dns_weighted",{static_weight:weight,dynamic_weight:100-weight});}
+    # INSYNC does not expire recursive DNS caches; the native records use TTL 60.
+    if(o.live&&o.scenario=="12"&&step>1){let wait=get(o,"dns_cache_wait_ms",65000);assert(wait>=65000&&wait<=90000,"cutover cache wait must be 65..90 seconds");sleep_ms(wait);}
     let written=json_parse(read_file(o.state));
     assert(num(written.weighted_static_weight)==weight&&num(written.weighted_dynamic_weight)==100-weight,"host did not persist the requested DNS shift");
     let fqdn="lmaws-weighted-"+o.run_id+"."+o.domain;
@@ -214,8 +216,9 @@ while(i<n){
 }
 let p=float(weight)/100.0;let expected=float(n)*p;
 let variance=float(n)*p*(1.0-p);let radius=3.0*sqrt(variance)+1.0;
-assert(abs(float(a)-expected)<=radius);if(weight==0){assert_eq(a,0);}
 file_write(${output},"{\"run_id\":\""+${o.run_id}+"\",\"live\":"+str(${o.live})+",\"target_static\":"+str(weight)+",\"static\":"+str(a)+",\"dynamic\":"+str(b)+",\"samples\":"+str(n)+"}");
+assert(abs(float(a)-expected)<=radius);if(weight==0){assert_eq(a,0);}
+if(weight==100){assert_eq(a,n);}
 mock.stop();
 end _dsl_
     let code=".lmweblab-local/probe-"+str(step)+".dslb";savedsl(probe,code);

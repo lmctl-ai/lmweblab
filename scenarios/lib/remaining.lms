@@ -32,12 +32,23 @@ end _dsl_
 fn rw_up(o) {
   if(o.number!="10"){rw_step(o,"table",{ttl_attribute:"expires_at"});}
   if(o.number=="07"){rw_step(o,"queues",{});}
-  if(o.number=="10"){rw_web(o,"bucket",{site_dir:"assets/site"});rw_web(o,"distribution",{});rw_web(o,"cache",{default_ttl:o.cache_seconds,max_ttl:o.cache_seconds});}
+  if(o.number=="10"){rw_web(o,"bucket",{site_dir:"assets/site"});}
   let args={slug:o.slug,role:o.role,runtime:o.runtime,handler:o.handler,source_file:o.source_file,memory_mb:o.memory_mb,timeout_s:o.timeout_s,ttl_seconds:o.ttl_seconds};
   if(o.number=="10"){args.upload_bucket="lmaws-site-"+o.run_id;args.max_upload_bytes=get(o,"max_upload_bytes",1048576);args.upload_expiry_seconds=get(o,"upload_expiry_seconds",300);args.content_types=get(o,"content_types","image/png,image/jpeg,image/webp,image/gif");}
-  rw_step(o,"lambda",args);
+  let deployed=rw_step(o,"lambda",args);
   if(o.number=="07"){rw_step(o,"worker",{source_file:o.worker_source,handler:"worker.handler",role:o.role,runtime:o.runtime,memory_mb:o.memory_mb,timeout_s:o.timeout_s});}
   rw_step(o,"reserve_http",{requests:100,bytes:2097152});
+  if(o.number=="10"){
+    if(o.live){
+      let smoke=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let s=curl.session(${deployed.lambda_url});let first=s.get("/").proxy("").timeout(10000).send();let warm=s.get("/").proxy("").timeout(10000).send();
+file_write(${".lmweblab-local/initial-"+o.run_id+".json"},"{\"first_status\":"+str(first.status())+",\"warm_status\":"+str(warm.status())+",\"first_ms\":"+str(first.time("total"))+",\"warm_ms\":"+str(warm.time("total"))+"}\n");
+file_write(".lmweblab-local/import-smoke-response.txt",first.body());assert_eq(first.status(),404);assert_eq(warm.status(),404);
+end _dsl_
+      rw_http(smoke,"import-smoke");
+    }
+    rw_web(o,"distribution",{});rw_web(o,"cache",{default_ttl:o.cache_seconds,max_ttl:o.cache_seconds});
+  }
 }
 fn rw_down(o) {
   let state=".lmweblab-local/serverless-"+o.run_id+".json";
