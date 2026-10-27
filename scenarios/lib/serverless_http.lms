@@ -1,0 +1,82 @@
+# Import-only lmcurl contracts for live serverless scenarios.
+# Every request is made by lmcurl; this file never calls AWS APIs directly.
+
+fn sl_private_path(o, suffix) {
+  return ".lmweblab-local/serverless-http-" + get(o, "run_id", "run") + "-" + get(o, "number", "00") + "-" + suffix + ".json";
+}
+
+fn sl_exec(program, o, name, timeout_ms) {
+  let bytecode = ".lmweblab-local/serverless-http-" + get(o, "run_id", "run") + "-" + name + ".dslb";
+  savedsl(program, bytecode);
+  let command = concat(dsl_cli(program), ["--dsl", bytecode]);
+  let result = system(command, timeout_ms);
+  assert(result.code == 0, "lmcurl contract failed; inspect private " + name + ".log");
+  return result;
+}
+
+fn sl_first_invokes(o, meta) {
+  let url = get(meta, "lambda_url", "");
+  assert(url != "", "lambda_url is required");
+  let output = sl_private_path(o, "first-warm");
+  let timeout_ms = get(o, "timeout_ms", 10000);
+  let p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let endpoint = ${url};
+let timeout_ms = ${timeout_ms};
+let s = curl.session(endpoint);
+let first = s.get("/").proxy("").timeout(timeout_ms).retry(5, 1000).send();
+let warm = s.get("/").proxy("").timeout(timeout_ms).retry(5, 1000).send();
+assert(first.status() >= 200 && first.status() < 500);
+assert(warm.status() >= 200 && warm.status() < 500);
+file_write(${output}, "{\"first_status\":" + str(first.status()) + ",\"warm_status\":" + str(warm.status()) + ",\"first_ms\":" + str(first.time("total")) + ",\"warm_ms\":" + str(warm.time("total")) + ",\"first_cold\":\"" + first.json("$.cold_start").value() + "\",\"warm_cold\":\"" + warm.json("$.cold_start").value() + "\"}\n");
+end _dsl_
+  sl_exec(p, o, "first-warm", 180000);
+  return json_parse(read_file(output));
+}
+
+fn sl_http_test(o, meta) {
+  let number = get(o, "number", "");
+  let live = get(o, "live", false);
+  assert(live, "serverless HTTP contract requires live=true");
+  assert(get(meta, "lambda_url", "") != "", "lambda_url is required");
+  let timeout_ms = get(o, "timeout_ms", 10000);
+  let p95_ms = get(o, "p95_ms", "2000.0");
+  let samples = get(o, "samples", 16);
+  let output = sl_private_path(o, "http");
+  let p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let lambda_url = ${get(meta, "lambda_url", "")};
+let cf_url = ${get(meta, "cf_url", "")};
+let site_url = ${get(meta, "site_url", "")};
+let timeout_ms = ${timeout_ms};
+let samples = ${samples};
+let p95_limit = str_to_float(${p95_ms});
+let metrics = "{\"scenario\":\"" + ${number} + "\",\"live\":true";
+let s = curl.session(lambda_url);
+let first = s.get("/").proxy("").timeout(timeout_ms).retry(5, 1000).send();
+let warm = s.get("/").proxy("").timeout(timeout_ms).retry(5, 1000).send();
+assert(first.status() >= 200 && first.status() < 500);assert(warm.status() >= 200 && warm.status() < 500);
+metrics = metrics + ",\"first_ms\":" + str(first.time("total")) + ",\"warm_ms\":" + str(warm.time("total"));
+if (${number} == "03") {
+  assert_eq(first.status(), 200);assert_eq(warm.status(), 200);
+  assert(warm.assert_json_schema("{\"type\":\"object\",\"required\":[\"ok\",\"run_id\",\"cold_start\",\"invocation\"]}"));
+  let load = curl.load(s.get("/").proxy("").timeout(timeout_ms), 4, 1.0, samples);assert_eq(load.threshold(p95_limit, 0.0), true);
+  metrics = metrics + ",\"p95_ms\":" + str(load.p95_ms());
+} else if (${number} == "04") {
+  let a = s.post("/entries").json("{\"author\":\"live-a\",\"message\":\"<script>alert(1)</script>\"}").proxy("").timeout(timeout_ms).retry(5,1000).send();
+  let b = s.post("/entries").json("{\"author\":\"live-b\",\"message\":\"second\"}").proxy("").timeout(timeout_ms).retry(5,1000).send();
+  assert_eq(a.status(), 201);assert_eq(b.status(), 201);
+  let page = s.get("/entries?limit=1").proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(page.status(),200);assert(page.json("$.next_cursor").value() != "");assert(page.json("$.items[0].expires_at").value() != "");
+  let next = s.get("/entries?limit=1&cursor=" + page.json("$.next_cursor").value()).proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(next.status(),200);
+  let load = curl.load(s.get("/entries?limit=1").proxy(""), 4, 1.0, samples);assert_eq(load.threshold(p95_limit, 0.0), true);metrics = metrics + ",\"p95_ms\":" + str(load.p95_ms());
+} else if (${number} == "05") {
+  assert(cf_url != "");let page = curl.session(cf_url).get("/").proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(page.status(),200);
+  let api = curl.session(cf_url).get("/api/info?probe=live").proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(api.status(),200);assert(api.assert_json_schema("{\"type\":\"object\",\"required\":[\"ok\",\"path\",\"query\"]}"));assert_eq(api.json("$.path").value(),"/api/info");assert(api.header("cache-control") != "");
+  let load = curl.load(s.get("/api/info").proxy(""), 4, 1.0, samples);assert_eq(load.threshold(p95_limit, 0.0), true);metrics = metrics + ",\"p95_ms\":" + str(load.p95_ms());
+} else if (${number} == "06") {
+  let report = s.get("/report.json").proxy("").timeout(timeout_ms).retry(5,1000).send();assert(report.status() == 200 || report.status() == 404);
+  if (report.status() == 200) { assert(report.assert_json_schema("{\"type\":\"object\",\"required\":[\"ok\",\"scheduled_runs\",\"latest_iso\"]}")); }
+}
+metrics = metrics + "}\n";file_write(${output}, metrics);
+end _dsl_
+  sl_exec(p, o, "http", 900000);
+  return json_parse(read_file(output));
+}
