@@ -62,10 +62,11 @@ def main() -> None:
     os.environ["TABLE_NAME"] = "lmaws_s04_fixture"
     guest = load(ROOT / "04-lambda-dynamodb-guestbook/lmaws/assets/guestbook.py", "guestbook")
     first = guest.handler({"requestContext": {"http": {"method": "POST"}}, "body": json.dumps({"author": "A <b>", "message": "<script>alert(1)</script>"})}, None)
-    assert first["statusCode"] == 201
+    assert first["statusCode"] == 201 and first["headers"]["X-Lmweblab-Cold-Start"] == "true"
     body = json.loads(first["body"])
     assert "&lt;script&gt;" in body["entry"]["message"]
-    guest.handler({"requestContext": {"http": {"method": "POST"}}, "body": json.dumps({"author": "B", "message": "second"})}, None)
+    second_post = guest.handler({"requestContext": {"http": {"method": "POST"}}, "body": json.dumps({"author": "B", "message": "second"})}, None)
+    assert second_post["headers"]["X-Lmweblab-Cold-Start"] == "false"
     page = guest.handler({"requestContext": {"http": {"method": "GET"}}, "queryStringParameters": {"limit": "1", "offset": "0"}}, None)
     page_body = json.loads(page["body"])
     assert page["statusCode"] == 200 and page_body["total"] == 1 and page_body["next_cursor"]
@@ -77,23 +78,39 @@ def main() -> None:
     live_page = json.loads(guest.handler({"requestContext": {"http": {"method": "GET"}}, "queryStringParameters": {"limit": "10"}}, None)["body"])
     assert all(item["id"] != "expired" for item in live_page["items"])
 
+    hello = load(ROOT / "03-lambda-function-url-hello/lmaws/assets/handler.py", "hello")
+    hello_one = hello.handler({"rawPath": "/", "queryStringParameters": {}}, None)
+    hello_two = hello.handler({"rawPath": "/", "queryStringParameters": {}}, None)
+    assert hello_one["headers"]["X-Lmweblab-Cold-Start"] == "true" and hello_two["headers"]["X-Lmweblab-Cold-Start"] == "false"
+
     api = load(ROOT / "05-static-plus-api/lmaws/assets/api.py", "api")
     response = api.handler({"rawPath": "/api/info", "queryStringParameters": {"q": "fixture"}}, None)
-    assert response["statusCode"] == 200 and json.loads(response["body"])["path"] == "/api/info"
+    assert response["statusCode"] == 200 and response["headers"]["X-Lmweblab-Cold-Start"] == "true" and json.loads(response["body"])["path"] == "/api/info"
 
     os.environ["TABLE_NAME"] = "lmaws_s06_fixture"
     os.environ["BUCKET_NAME"] = "lmaws-s06-fixture"
     reporter = load(ROOT / "06-scheduled-report/lmaws/assets/reporter.py", "reporter")
     before = reporter.handler({}, None)
-    assert before["statusCode"] == 404
-    one = json.loads(reporter.handler({"source": "aws.events", "detail-type": "Scheduled Event"}, None)["body"])
-    two = json.loads(reporter.handler({"source": "aws.events", "detail-type": "Scheduled Event"}, None)["body"])
+    assert before["statusCode"] == 404 and before["headers"]["X-Lmweblab-Cold-Start"] == "true"
+    first_tick = reporter.handler({"source": "aws.events", "detail-type": "Scheduled Event"}, None)
+    # The first call above is the cold invocation; the second scheduled tick
+    # is warm and must retain the same durable counter semantics.
+    one = json.loads(first_tick["body"])
+    assert first_tick["headers"]["X-Lmweblab-Cold-Start"] == "false"
+    second_tick = reporter.handler({"source": "aws.events", "detail-type": "Scheduled Event"}, None)
+    two = json.loads(second_tick["body"])
+    assert second_tick["headers"]["X-Lmweblab-Cold-Start"] == "false"
     assert one["scheduled_runs"] == 1 and two["scheduled_runs"] == 2
     writes_before_poll = len(s3.objects)
-    polled = json.loads(reporter.handler({}, None)["body"])
-    polled_again = json.loads(reporter.handler({}, None)["body"])
+    polled_response = reporter.handler({}, None)
+    polled = json.loads(polled_response["body"])
+    polled_again_response = reporter.handler({}, None)
+    polled_again = json.loads(polled_again_response["body"])
     assert polled["scheduled_runs"] == 2 and polled_again["scheduled_runs"] == 2
     assert len(s3.objects) == writes_before_poll and len([row for row in rows if row.get("pk", "").startswith("report#")]) == 2
+    html_response = reporter.handler({"rawPath": "/report.html"}, None)
+    assert html_response["statusCode"] == 200 and "lmweblab-s06" in html_response["body"]
+    assert len(s3.objects) == writes_before_poll
     cold=load(ROOT / "06-scheduled-report/lmaws/assets/reporter.py","reporter_cold")
     assert json.loads(cold.handler({},None)["body"])["scheduled_runs"]==2,"HTTP poll changed schedule state"
     assert s3.objects[("lmaws-s06-fixture", "latest.html")]["ContentType"] == "text/html"

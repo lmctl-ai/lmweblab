@@ -4,6 +4,7 @@ import os
 import time
 
 RUNS = 0
+COLD_START = True
 TABLE_NAME = os.environ.get("TABLE_NAME", "lmaws_s06_runs_demo")
 BUCKET_NAME = os.environ.get("BUCKET_NAME", "lmaws-s06-report-demo")
 if os.environ.get("LMWEBLAB_OFFLINE") == "1":
@@ -41,6 +42,18 @@ def _latest_report():
     return None
 
 
+def _latest_html():
+    if S3 is None:
+        return None
+    try:
+        return S3.get_object(Bucket=BUCKET_NAME, Key="latest.html")["Body"].read()
+    except Exception as error:
+        code = getattr(error, "response", {}).get("Error", {}).get("Code", "")
+        if code in ("NoSuchKey", "NoSuchBucket", "404"):
+            return None
+        raise
+
+
 def _scheduled_report():
     global RUNS
     if DDB is not None:
@@ -60,9 +73,18 @@ def _scheduled_report():
 
 
 def handler(event, context):
+    global COLD_START
+    cold = COLD_START
+    COLD_START = False
     if isinstance(event, dict) and event.get("source") == "aws.events":
-        return _scheduled_report()
-    report = _latest_report()
-    if report is None:
-        return _response(404, {"ok": False, "error": "report not ready"})
-    return _response(200, report)
+        response = _scheduled_report()
+    elif isinstance(event, dict) and ((event.get("rawPath") == "/report.html") or ((event.get("requestContext") or {}).get("http") or {}).get("path") == "/report.html"):
+        html_body = _latest_html()
+        response = {"statusCode": 200, "headers": {"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store"}, "body": html_body.decode("utf-8") if html_body is not None else ""} if html_body is not None else _response(404, {"ok": False, "error": "report not ready"})
+    else:
+        report = _latest_report()
+        response = _response(200, report) if report is not None else _response(404, {"ok": False, "error": "report not ready"})
+    headers = dict(response.get("headers") or {})
+    headers["X-Lmweblab-Cold-Start"] = "true" if cold else "false"
+    response["headers"] = headers
+    return response

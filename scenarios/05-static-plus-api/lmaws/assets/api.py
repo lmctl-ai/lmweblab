@@ -1,9 +1,10 @@
 import json
 import os
 import time
+COLD_START = True
 
 
-def handler(event, context):
+def _handler(event, context):
     path = (event or {}).get("rawPath", "/api/status")
     qs = (event or {}).get("queryStringParameters") or {}
     return {
@@ -23,3 +24,14 @@ def handler(event, context):
             }
         ),
     }
+
+
+def handler(event, context):
+    global COLD_START
+    cold = COLD_START
+    COLD_START = False
+    response = dict(_handler(event, context))
+    headers = dict(response.get("headers") or {})
+    headers["X-Lmweblab-Cold-Start"] = "true" if cold else "false"
+    response["headers"] = headers
+    return response

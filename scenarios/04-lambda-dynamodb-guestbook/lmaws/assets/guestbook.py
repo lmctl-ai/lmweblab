@@ -9,6 +9,15 @@ import base64
 TABLE_NAME = os.environ.get("TABLE_NAME", "lmaws_tf_s04_table_demo01")
 TTL_SECONDS = int(os.environ.get("TTL_SECONDS", "3600"))
 MEM_ENTRIES = []
+COLD_START = True
+
+
+def _with_cold_header(response, cold):
+    response = dict(response)
+    headers = dict(response.get("headers") or {})
+    headers["X-Lmweblab-Cold-Start"] = "true" if cold else "false"
+    response["headers"] = headers
+    return response
 
 def json_default(value):
     return (int(value) if value==int(value) else float(value)) if hasattr(value,"as_tuple") else str(value)
@@ -22,7 +31,7 @@ else:
         raise
 
 
-def handler(event, context):
+def _handler(event, context):
     method = ((event or {}).get("requestContext") or {}).get("http", {}).get("method", "GET")
     qs = (event or {}).get("queryStringParameters") or {}
     try:
@@ -102,3 +111,10 @@ def handler(event, context):
             }
         , default=json_default),
     }
+
+
+def handler(event, context):
+    global COLD_START
+    cold = COLD_START
+    COLD_START = False
+    return _with_cold_header(_handler(event, context), cold)

@@ -32,6 +32,7 @@ def handler(event, context):
         "headers": {
             "Content-Type": "application/json; charset=utf-8",
             "Cache-Control": "no-store",
+            "X-Lmweblab-Cold-Start": "true" if is_cold else "false",
         },
         "body": json.dumps(body),
     }
