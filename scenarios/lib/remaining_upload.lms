@@ -1,0 +1,20 @@
+import "./remaining_live.lms";
+fn rw_upload_test(o) {
+  let base=o.url;let ready=".lmweblab-local/upload-"+str(now())+".url";let stop=ready+".stop";
+  if(!o.live){let start=system(["env","UPLOAD_EXPIRY_SECONDS="+str(o.upload_expiry_seconds),"MAX_UPLOAD_BYTES="+str(o.max_upload_bytes),"CONTENT_TYPES="+o.content_types,"python3","../../lib/remaining_upload_spawn.py",ready,stop],30000);assert(start.code==0,"upload fixture startup failed");base=trim(read_file(ready));}
+  assert(!o.live||o.upload_expiry_seconds<=30,"live expiry test requires UPLOAD_EXPIRY_SECONDS <=30");
+  let fetch_base=base;let fetch_path="/gallery/demo.png";if(o.live){fetch_base=o.cf_url;fetch_path="/demo.png";}
+  let request=json_stringify({key:"large.png",content_type:"image/png",size:o.max_upload_bytes+1});
+  let p=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let s=curl.session(${base});let signed=s.post("/presign").json("{\"key\":\"demo.png\",\"content_type\":\"image/png\",\"size\":3}").timeout(5000).proxy("").send();assert_eq(signed.status(),200);assert_eq(signed.json("$.expires_in").to_int(),${o.upload_expiry_seconds});let url=signed.json("$.url").value();file_write(".lmweblab-local/signed-url",url);
+assert_eq(curl.session(url).put("").body("PNG").header("content-type","image/png").timeout(5000).proxy("").send().status(),200);
+let fetched=curl.session(${fetch_base}).get(${fetch_path}).timeout(10000).proxy("").send();assert_eq(fetched.status(),200);assert_eq(fetched.body(),"PNG");assert_eq(fetched.header("content-type"),"image/png");
+assert_eq(curl.session(url).put("").body("PNG").header("content-type","text/plain").proxy("").timeout(5000).send().status(),403);assert_eq(curl.session(url).put("").body("PNGG").header("content-type","image/png").proxy("").timeout(5000).send().status(),403);assert_eq(s.post("/presign").json(${request}).proxy("").timeout(5000).send().status(),413);assert_eq(s.post("/presign").json("{\"key\":\"bad.png\",\"content_type\":\"text/plain\",\"size\":3}").proxy("").timeout(5000).send().status(),415);
+if(${!o.live}){assert_eq(s.get("/__expire").proxy("").timeout(5000).send().status(),204);}
+end _dsl_
+  rw_http(p,"upload");if(o.live){sleep_ms((o.upload_expiry_seconds+2)*1000);}let url=read_file(".lmweblab-local/signed-url");
+  let expired=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let response=curl.session(${url}).put("").body("PNG").header("content-type","image/png").proxy("").timeout(5000).send();assert_eq(response.status(),403);
+end _dsl_
+  rw_http(expired,"upload-expired");if(!o.live){write_file(stop,"done");}
+}

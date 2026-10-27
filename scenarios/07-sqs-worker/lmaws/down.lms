@@ -1,0 +1,4 @@
+# === CONFIG ===
+let REGION="us-east-1"; let DOMAIN=getenv("LMWEBLAB_DOMAIN","example.com"); let NAME_PREFIX="lmaws"; let SLUG="sqs_worker"; let MEMORY_MB=128;let TIMEOUT_S=10;let TTL_SECONDS=3600;let COST_CAP_USD="0.05";
+# === END CONFIG ===
+import "../../lib/remaining.lms"; rw_run("07","down",{region:REGION,domain:DOMAIN,prefix:NAME_PREFIX,slug:SLUG,cap:COST_CAP_USD},ARGV);
