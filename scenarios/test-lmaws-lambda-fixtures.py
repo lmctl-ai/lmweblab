@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import sys
+import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -19,6 +21,20 @@ def load(path: Path, name: str):
 
 
 def main() -> None:
+    rows: list[dict] = []
+
+    class FakeTable:
+        def put_item(self, *, Item): rows.append(Item)
+        def scan(self, *, Limit): return {"Items": rows[:Limit]}
+
+    class FakeDynamo:
+        def Table(self, _name): return FakeTable()
+
+    class FakeS3Client:
+        def put_object(self, **kwargs): self.last = kwargs
+
+    fake_boto3 = types.SimpleNamespace(resource=lambda _name: FakeDynamo(), client=lambda _name: FakeS3Client())
+    sys.modules["boto3"] = fake_boto3
     guest = load(ROOT / "04-lambda-dynamodb-guestbook/lmaws/assets/guestbook.py", "guestbook")
     os.environ["TABLE_NAME"] = "lmaws_s04_fixture"
     first = guest.handler({"requestContext": {"http": {"method": "POST"}}, "body": json.dumps({"author": "A <b>", "message": "<script>alert(1)</script>"})}, None)

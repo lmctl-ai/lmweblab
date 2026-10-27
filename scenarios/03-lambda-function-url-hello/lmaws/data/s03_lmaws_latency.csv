@@ -1,4 +1,4 @@
 metric,ms
-cold start,0.478
-warm invoke,0.303
-p95,1.413876
+cold start,0.84
+warm invoke,0.379
+p95,1.196772

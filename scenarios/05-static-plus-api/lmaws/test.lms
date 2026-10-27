@@ -3,10 +3,15 @@ let REQUEST_TIMEOUT_MS=5000; let P95_THRESHOLD_MS="2000.0";
 # === END CONFIG ===
 assert(file_exists(".lmweblab-local/state.json"));
 mkdir("images"); mkdir("data");
+let token=str(now()); let ready_file=".lmweblab-local/s05-ready-"+token+".txt"; let stop_file=".lmweblab-local/s05-stop-"+token;
+fn serve_fixture(){system(["python3","../../lib/lambda_fixture_spawn.py","05",ready_file,stop_file],120000);}
+fn run_contract(){for(i in range(0,200)){if(file_exists(ready_file)){break;}sleep_ms(10);}assert(file_exists(ready_file));let base=trim(read_file(ready_file));
 let p=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
-let m=curl.mock(); let s=curl.session(m.url()); let page=s.get("/json").proxy("").timeout(${REQUEST_TIMEOUT_MS}).send(); let api=s.get("/json?api=1").proxy("").timeout(${REQUEST_TIMEOUT_MS}).send(); assert_eq(page.status(),200); assert_eq(api.status(),200); assert(api.assert_json_schema("{\"type\":\"object\",\"required\":[\"ok\"]}")); let load=curl.load(s.get("/json").proxy(""),4,1.0,16); assert_eq(load.threshold(str_to_float(${P95_THRESHOLD_MS}),0.0),true); file_write("data/s05_lmaws_latency.csv","metric,ms\nstatic,"+str(page.time("total"))+"\napi p95,"+str(load.p95_ms())+"\n"); m.stop();
+let s=curl.session(${base}); let page=s.get("/").proxy("").timeout(${REQUEST_TIMEOUT_MS}).send(); let api=s.get("/api/info?x=1").proxy("").timeout(${REQUEST_TIMEOUT_MS}).send(); assert_eq(page.status(),200); assert(str_contains(page.body(),"static fixture")); assert_eq(api.status(),200); assert(api.assert_json_schema("{\"type\":\"object\",\"required\":[\"ok\",\"path\",\"query\"]}")); assert_eq(api.json("$.path").value(),"/api/info"); assert(str_contains(api.body(),"lmweblab-s05"));
+let load=curl.load(s.get("/api/info").proxy(""),4,1.0,16); assert_eq(load.threshold(str_to_float(${P95_THRESHOLD_MS}),0.0),true); file_write("data/s05_lmaws_latency.csv","metric,ms\nstatic,"+str(page.time("total"))+"\napi p95,"+str(load.p95_ms())+"\n");
 end _dsl_
-savedsl(p,".lmweblab-local/test.dslb"); let r=system(concat(dsl_cli(p),["--dsl",".lmweblab-local/test.dslb"]),120000); assert(r.code==0);
+savedsl(p,".lmweblab-local/test.dslb");let r=system(concat(dsl_cli(p),["--dsl",".lmweblab-local/test.dslb"]),120000);assert(r.code==0,"scenario 05 lmcurl test failed");write_file(stop_file,"stop\n");}
+serve_fixture(); run_contract();
 let draw=_dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
 scene.canvas(900,320,"#0f172a");
 scene.text(28.0,42.0,20.0,"Scenario 05: Static S3 + Lambda API","#f8fafc");

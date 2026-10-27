@@ -3,6 +3,13 @@ import os
 import time
 
 RUNS = 0
+if os.environ.get("LMWEBLAB_OFFLINE") == "1":
+    S3 = None
+    DDB = None
+else:
+    import boto3
+    S3 = boto3.client("s3")
+    DDB = boto3.resource("dynamodb").Table(os.environ.get("TABLE_NAME", "lmaws_s06_runs_demo"))
 
 
 def handler(event, context):
@@ -19,6 +26,10 @@ def handler(event, context):
         "latest_iso": now_iso,
         "time_ns": time.time_ns(),
     }
+    if DDB is not None:
+        DDB.put_item(Item={"run_seq": RUNS, **report})
+    if S3 is not None:
+        S3.put_object(Bucket=report["bucket"], Key="latest.json", Body=json.dumps(report).encode("utf-8"), ContentType="application/json")
     return {
         "statusCode": 200,
         "headers": {"Content-Type": "application/json; charset=utf-8"},
