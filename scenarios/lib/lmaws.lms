@@ -1,7 +1,9 @@
 # Import-only lmaws engine helpers. State, receipts and HTTP targets remain private.
 fn sa_exec(p, o, name, timeout_ms) {
   let host_version=system(concat(dsl_cli(p),["--version"]),30000);
-  assert(host_version.code==0&&regex_test(host_version.stdout,"0\\.1\\.(1[6-9]|[2-9][0-9])"),"lmaws >=0.1.16 required; remove older PATH executable or supply current host");
+  let fields=split(trim(host_version.stdout)," ");let version=split(fields[len(fields)-1],".");
+  assert(host_version.code==0&&len(version)==3,"cannot identify lmaws host version");
+  assert(num(version[0])>0||num(version[1])>1||num(version[2])>=16,"lmaws >=0.1.16 required; remove older PATH executable or supply current host");
   let code=".lmweblab-local/"+name+".dslb"; savedsl(p,code);
   let flags=o.live?["--live","--profile","lmaws","--region",o.region]:["--dry-run"];
   let command=concat(dsl_cli(p),concat(flags,["--dsl",code]));
@@ -115,6 +117,8 @@ fn scenario_run(number,action,config,argv) {
     else if(argv[i]=="--domain"&&i+1<len(argv)){i=i+1;o.domain=argv[i];}
     i=i+1;
   }
+  # Explicit mode flags override a serialized configuration.
+  for(flag in argv){if(flag=="--live"){o.live=true;}if(flag=="--offline"||flag=="--dry-run"){o.live=false;}}
   assert(file_exists(o.root+"/shared/site/index.html"),"Run from this scenario's lmaws directory");
   assert(o.samples>=20&&o.samples<=100,"samples must be 20..100");
   assert(num(o.cap)>0&&num(o.cap)<=0.25,"cost cap must be within host ceiling");
@@ -128,7 +132,20 @@ fn scenario_run(number,action,config,argv) {
   write_file(".lmweblab-local/run-id.txt",o.run_id);
   o.state=".lmweblab-local/web-"+o.run_id+".json";
   let started=now();
-  if(action=="up"){sa_up(o);}
+  if((action=="up"||action=="test")&&!contains(argv,"--phase-child")){
+    let config_path=".lmweblab-local/config-"+o.run_id+"-"+action+".json";
+    write_file(config_path,json_stringify(o));
+    let args=[o.live?"--live":"--offline","--config",config_path,"--run-id",o.run_id,"--domain",o.domain,"--phase-child"];
+    let result=system(concat(["lmctl",action+".lms"],args),2400000);
+    write_file(".lmweblab-local/"+action+"-child.log",result.stdout+result.stderr);
+    if(result.code!=0){
+      let recovery=system(concat(["lmctl","down.lms"],args),2400000);
+      write_file(".lmweblab-local/"+action+"-recovery.log",recovery.stdout+recovery.stderr);
+      assert(recovery.code==0,"phase failed and cleanup incomplete; rerun down.lms with the same run id");
+      assert(false,"phase failed; cleanup verified; inspect private child log");
+    }
+  }
+  else if(action=="up"){sa_up(o);}
   else if(action=="test"){sa_test(o);}
   else if(action=="down"){sa_down(o);}
   else if(action=="status"){
@@ -141,8 +158,9 @@ end _dsl_
   } else {
     # Child-process errors are collected before guaranteed cleanup; no assert can skip down.
     let flag=o.live?"--live":"--offline";
-    write_file(".lmweblab-local/effective-config.json",json_stringify(o));
-    let args=[flag,"--config",".lmweblab-local/effective-config.json","--run-id",o.run_id,"--domain",o.domain];if(o.https){push(args,"--acm");}
+    let config_path=".lmweblab-local/config-"+o.run_id+".json";
+    write_file(config_path,json_stringify(o));
+    let args=[flag,"--config",config_path,"--run-id",o.run_id,"--domain",o.domain];if(o.https){push(args,"--acm");}
     let up=system(concat(["lmctl","up.lms"],args),2400000);
     let test={code:1};if(up.code==0){test=system(concat(["lmctl","test.lms"],args),600000);}
     let down=system(concat(["lmctl","down.lms"],args),2400000);
@@ -158,6 +176,8 @@ fn sa_weighted_test(o,state) {
   for(weight in [o.first_weight,o.middle_weight,o.final_weight]) {
     step=step+1;
     if(step>1){sa_step(o,"dns_weighted",{static_weight:weight,dynamic_weight:100-weight});}
+    let written=json_parse(read_file(o.state));
+    assert(num(written.weighted_static_weight)==weight&&num(written.weighted_dynamic_weight)==100-weight,"host did not persist the requested DNS shift");
     let fqdn="lmaws-weighted-"+o.run_id+"."+o.domain;
     let host=get(state,"cf_domain","dfixture.cloudfront.net");
     let output=".lmweblab-local/split-"+str(step)+".json";
