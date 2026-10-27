@@ -20,3 +20,7 @@ for name in ('lmaws_architecture','lmaws_latency'):
     assert picture.stat().st_size<=300000,picture
 print('PASS offline stack, both HTTP contract phases, teardown and synthetic pictures; AWS untouched')
 PY
+
+# Run new scenarios from isolated copies; never reuse an active deployment directory.
+timeout 600 "$root_dir/scenarios/test-lmaws.sh"
+timeout 30 python3 "$root_dir/scenarios/check-lmaws-docs.py"

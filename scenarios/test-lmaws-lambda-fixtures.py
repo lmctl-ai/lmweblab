@@ -25,6 +25,9 @@ def main() -> None:
 
     class FakeTable:
         def put_item(self, *, Item): rows.append(Item)
+        def update_item(self, **kwargs):
+            self.counter=getattr(self,"counter",0)+1
+            return {"Attributes":{"runs":self.counter}}
         def scan(self, *, Limit, **kwargs):
             start = kwargs.get("ExclusiveStartKey", {}).get("pk", "")
             index = next((i + 1 for i, row in enumerate(rows) if row.get("pk") == start), 0)
@@ -33,8 +36,9 @@ def main() -> None:
             if index + Limit < len(rows): out["LastEvaluatedKey"] = {"pk": page[-1]["pk"]}
             return out
 
+    tables={}
     class FakeDynamo:
-        def Table(self, _name): return FakeTable()
+        def Table(self, name): return tables.setdefault(name,FakeTable())
 
     class FakeS3Client:
         def put_object(self, **kwargs): self.last = kwargs
@@ -62,6 +66,11 @@ def main() -> None:
     one = json.loads(reporter.handler({}, None)["body"])
     two = json.loads(reporter.handler({}, None)["body"])
     assert one["scheduled_runs"] == 1 and two["scheduled_runs"] == 2
+    cold=load(ROOT / "06-scheduled-report/lmaws/assets/reporter.py","reporter_cold")
+    assert json.loads(cold.handler({},None)["body"])["scheduled_runs"]==3,"schedule counter lost on cold start"
+    assert any(row.get("pk")=="report#3" for row in rows)
+    assert guest.handler({"requestContext":{"http":{"method":"POST"}},"body":"[]"},None)["statusCode"]==400
+    assert guest.handler({"requestContext":{"http":{"method":"POST"}},"body":json.dumps({"message":"x"*9000})},None)["statusCode"]==413
     print("PASS Lambda fixtures: escaping, pagination, API routing, and scheduled persistence")
 
 

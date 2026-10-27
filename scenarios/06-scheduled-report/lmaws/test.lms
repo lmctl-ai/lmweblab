@@ -1,7 +1,7 @@
-assert(!contains(ARGV,"--live"), "live mode is pending the Lambda role grant");
 # === CONFIG ===
 let REQUEST_TIMEOUT_MS=5000; let RUNS_REQUIRED=2;
 # === END CONFIG ===
+assert(!contains(ARGV,"--live")&&getenv("LMWEBLAB_LIVE","0")!="1", "live mode is pending the Lambda role grant");
 assert(file_exists(".lmweblab-local/state.json"));
 mkdir("images"); mkdir("data");
 let token=str(now()); let ready_file=".lmweblab-local/s06-ready-"+token+".txt"; let stop_file=".lmweblab-local/s06-stop-"+token;

@@ -26,11 +26,13 @@ def load(path: Path, name: str):
 
 scenario = sys.argv[1]
 os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
-os.environ.setdefault("LMWEBLAB_OFFLINE", "1")
+os.environ.pop("LMWEBLAB_OFFLINE",None)
+from fake_boto3 import Boto3
+sys.modules["boto3"]=Boto3()
 ready = Path(sys.argv[2])
 stop = Path(sys.argv[3])
 paths = {
-    "03": ROOT / "03-lambda-function-url-hello/lmcloud/assets/handler.py",
+    "03": ROOT / "03-lambda-function-url-hello/lmaws/assets/handler.py",
     "04": ROOT / "04-lambda-dynamodb-guestbook/lmaws/assets/guestbook.py",
     "05": ROOT / "05-static-plus-api/lmaws/assets/api.py",
     "06": ROOT / "06-scheduled-report/lmaws/assets/reporter.py",

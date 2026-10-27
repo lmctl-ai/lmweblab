@@ -136,3 +136,24 @@ Scenarios 01 and 02 split the original native-host stack into independent deploy
 | Lambda 03–06 | Offline only until the Lead authorizes live role/PassRole testing | Offline only until the same authorization |
 
 Failure modes fixed while building the lmaws engine: standalone dynamic DNS no longer requires a certificate step; weighted steps are repeatable instead of being skipped as already complete; initial records cannot be adopted; all exact-name records are included in discovery, including foreign identifiers; teardown refuses foreign records. A local PATH executable older than v0.1.16 is rejected before provider dispatch. `scenarios/test-lmaws.sh` copies fixtures without private state to avoid replaying an already-destroyed run.
+
+
+### lmaws measurements and script size
+
+The corrected scenario 11 live run took **335.062 s up / 126.615 s test / 496.019 s down**. Load p95 was **221.47 ms**. Static/dynamic samples were **18/2**, **5/15**, **0/20**, respectively, with 20 samples at each target weight. The outward-rounded three-sigma binomial acceptance band permits the observed middle-step sample; zero static weight requires exactly zero static hits. Both attempt namespaces ended at zero active leftovers, verified by a separate lmaws process. See [numeric evidence](lmaws-results.json).
+
+The successful run's conservative price-table estimate was **$0.00312048**; the complete two-attempt campaign was **$0.00601854**. These include admitted HTTP request/transfer bounds and are estimates, not bill measurements. The first attempt failed before sampling because a retry count exceeded lmcurl's limit of five. It was cleaned completely; the fixed driver uses bounded outer readiness rounds and records run/mode metadata per probe so fixture files cannot be mistaken for live evidence.
+
+Physical `.lms` lines in each engine directory (including report scripts; inline statement density differs, so this is not a complexity score):
+
+| Scenario | lmaws lines | lmcloud lines |
+|---|---:|---:|
+| 01 | 101 | 574 |
+| 02 | 101 | 594 |
+| 03 | 113 | 229 |
+| 04 | 99 | 178 |
+| 05 | 104 | 178 |
+| 06 | 100 | 207 |
+| 11 | 101 | 781 |
+
+The lmaws engine additionally shares `scenarios/lib/lmaws.lms` (227 lines), root HTTP contracts and Python fixture adapters. The lmcloud engine shares `scenarios/lib/common.lms` and provider configuration. Static-only lmaws prepares ACM even for HTTP, so the live resource graphs differ from the no-ACM lmcloud HTTP variant; timings are not controlled benchmarks.

@@ -36,3 +36,6 @@ HTTP checks include bounded readiness polling, exact status/content checks, HTML
 Live Part A passed both phases: p95 **391 ms HTTP** and **152 ms HTTPS**. The successful estimate was **$0.00108**; the complete campaign estimate was **$0.00514**. A fresh lmaws process verified **zero active leftovers** across all seven attempt namespaces. [Timings, cost basis and tool comparison](compare/RESULTS.md).
 
 [lmaws v0.1.16 release](https://github.com/lmctl-ai/lmaws/releases/tag/v0.1.16): five native binaries, verified checksums, and a fresh-cache offline install proof.
+
+
+The [scenario catalog](scenarios/README.md) adds independent lmaws implementations of 01 (static site), 02 (dynamic nano), 03–06 (offline Lambda patterns), and 11 (weighted DNS). The live weighted run passed and both attempt namespaces were cleaned; [numeric results and limits](scenarios/RESULTS.md) distinguish real measurements from fixtures. Run from each `scenarios/NN-name/lmaws/` directory with `lmctl all.lms --offline`; new APIs currently require a source-built lmaws on PATH.

@@ -1,26 +1,26 @@
 # === CONFIG ===
-let SCENARIO_TITLE = "Scenario 11: weighted-dns-two-backends (lmaws)";
-let LEFT_LABEL = "Route 53 weighted DNS";
-let RIGHT_LABEL = "Static CF + dynamic nano";
+let TITLE = "Scenario 11: weighted DNS with two backends (lmaws)";
+let STATIC_LABEL = "CloudFront / OAC / S3";
+let DYNAMIC_LABEL = "Spot nano / Python API";
 # === END CONFIG ===
 mkdir("images");mkdir(".lmweblab-local");
 let draw=_dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
-scene.canvas(900,360,"#0f172a");
-scene.text(32.0,42.0,23.0,${SCENARIO_TITLE},"#f8fafc");
-scene.text(32.0,70.0,14.0,"Synthetic architecture / run-scoped names and ownership checks","#94a3b8");
-let a=scene.box(170.0,180.0,220.0,90.0,${LEFT_LABEL},"#1e293b","#38bdf8",10.0,15.0);
-let b=scene.box(590.0,180.0,250.0,90.0,${RIGHT_LABEL},"#1e293b","#34d399",10.0,15.0);
-scene.connector(a,"e",b,"w","straight","none","arrow","none","#38bdf8",2.0,"lmcurl assertions",0.5,0.0,-16.0);
-scene.text(32.0,316.0,14.0,"up -> test -> down / independent inventory must return zero","#cbd5e1");
-scene.render_png("images/architecture.png",900,360,1);
+scene.canvas(1000,420,"#0f172a");
+scene.text(32.0,42.0,24.0,${TITLE},"#f8fafc");
+scene.text(32.0,74.0,14.0,"Synthetic architecture / weights 90:10 -> 50:50 -> 0:100","#94a3b8");
+let dns=scene.box(200.0,210.0,260.0,100.0,"Route 53 weighted A\nOne run-scoped name","#1e293b","#38bdf8",10.0,16.0);
+let site=scene.box(675.0,145.0,320.0,76.0,${STATIC_LABEL},"#1e293b","#818cf8",10.0,16.0);
+let app=scene.box(675.0,290.0,320.0,76.0,${DYNAMIC_LABEL},"#1e293b","#34d399",10.0,16.0);
+scene.connector(dns,"e",site,"w","elbow","none","arrow","none","#818cf8",2.0,"Static weight",0.5,0.0,-14.0);
+scene.connector(dns,"e",app,"w","elbow","none","arrow","none","#34d399",2.0,"Dynamic weight",0.5,0.0,14.0);
+scene.text(32.0,375.0,14.0,"lmcurl DoH + unique ECS subnet -> explicit resolve -> binomial check -> owned teardown","#cbd5e1");
+scene.render_png("images/architecture.png",1000,420,1);
 end _dsl_
-savedsl(draw,".lmweblab-local/draw.dslb");
-let r=system(concat(dsl_cli(draw),["--dsl",".lmweblab-local/draw.dslb"]),120000);assert(r.code==0);
-write_file(".lmweblab-local/synthetic.dat","HTTP 35\nJSON 28\nLoad 42\n");
+savedsl(draw,".lmweblab-local/draw.dslb");let r=system(concat(dsl_cli(draw),["--dsl",".lmweblab-local/draw.dslb"]),120000);assert(r.code==0);
+write_file(".lmweblab-local/synthetic.dat","90/10 90 10\n50/50 50 50\n0/100 0 100\n");
 let plot=_dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
 plot.png("images/results.png",900,440);
-plot.cmd("set title 'Synthetic fixture latencies (not live measurements)'; set ylabel 'milliseconds'; set yrange [0:50]; set grid ytics; set style data histograms; set style fill solid 0.8; set boxwidth 0.7");
-plot.cmd("plot '.lmweblab-local/synthetic.dat' using 2:xtic(1) lc rgb '#38bdf8' notitle");plot.close();
+plot.cmd("set title 'Synthetic fixture targets (not live measurements)'; set ylabel 'share (%)'; set yrange [0:115]; set grid ytics; set key top right; set style data histograms; set style histogram cluster gap 1; set style fill solid 0.8; set boxwidth 0.7");
+plot.cmd("plot '.lmweblab-local/synthetic.dat' using 2:xtic(1) title 'Static' lc rgb '#818cf8', '' using 3 title 'Dynamic' lc rgb '#34d399'");plot.close();
 end _dsl_
-savedsl(plot,".lmweblab-local/plot.dslb");
-r=system(concat(dsl_cli(plot),["--dsl",".lmweblab-local/plot.dslb"]),120000);assert(r.code==0);
+savedsl(plot,".lmweblab-local/plot.dslb");r=system(concat(dsl_cli(plot),["--dsl",".lmweblab-local/plot.dslb"]),120000);assert(r.code==0);

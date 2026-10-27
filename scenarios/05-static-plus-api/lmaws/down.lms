@@ -1,10 +1,11 @@
 # === CONFIG ===
 let REGION = "us-east-1";
 # === END CONFIG ===
-assert(!contains(ARGV,"--live"), "live mode is pending the Lambda role grant");
+assert(!contains(ARGV,"--live")&&getenv("LMWEBLAB_LIVE","0")!="1", "live mode is pending the Lambda role grant");
 assert(file_exists(".lmweblab-local/state.json")); let st=json_parse(read_file(".lmweblab-local/state.json"));
 let web_state=".lmweblab-local/web-"+get(st,"run_id","")+".json"; let serverless_state=".lmweblab-local/serverless-"+get(st,"run_id","")+".json";
+let recorded_domain=json_parse(read_file(serverless_state)).domain;
 let p=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
-let cloud=aws.demo(); let web=cloud.web_stack(${get(st,"run_id","")},"example.com",${web_state}); let serverless=cloud.serverless_stack(${get(st,"run_id","")},"example.com",${serverless_state}); let gone=web.down(); let sgone=serverless.down(); file_write(".lmweblab-local/down.json","{\"web\":"+gone.json()+",\"serverless\":"+sgone.json()+"}");
+let cloud=aws.demo(); let web=cloud.web_stack(${get(st,"run_id","")},${recorded_domain},${web_state}); let serverless=cloud.serverless_stack(${get(st,"run_id","")},${recorded_domain},${serverless_state}); let gone=web.down(); let sgone=serverless.down(); check(serverless.leftovers().len()==0); check(web.leftovers().len()==0); file_write(".lmweblab-local/down.json","{\"web\":"+gone.json()+",\"serverless\":"+sgone.json()+"}");
 end _dsl_
 savedsl(p,".lmweblab-local/down.dslb"); assert(system(concat(dsl_cli(p),["--dry-run","--dsl",".lmweblab-local/down.dslb"]),120000).code==0); println("PASS scenario 05 down; leftovers=0"); println("estimated cost: $0.0000");

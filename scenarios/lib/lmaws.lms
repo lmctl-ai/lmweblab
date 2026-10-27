@@ -94,10 +94,16 @@ fn sa_test(o) {
     if(o.scenario!="01"){
       write_file(".lmweblab-dynamic-url","http://"+state.app);
       let ready=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
-let r=curl.session("http://"+${state.app}).get("/healthz").proxy("").timeout(${o.timeout}).retry(30,2000).send();assert_eq(r.status(),200);
+let r=curl.session("http://"+${state.app}).get("/healthz").proxy("").timeout(${o.timeout}).retry(5,2000).send();assert_eq(r.status(),200);
 end _dsl_
       let code=".lmweblab-local/ready.dslb";savedsl(ready,code);
-      let r=system(concat(dsl_cli(ready),["--dsl",code]),180000);assert(r.code==0,"dynamic readiness failed");
+      let ready_ok=false;let round=0;
+      while(!ready_ok&&round<6){
+        round=round+1;let result=system(concat(dsl_cli(ready),["--dsl",code]),90000);
+        write_file(".lmweblab-local/readiness-"+o.run_id+"-"+str(round)+".log",result.stdout+result.stderr);
+        ready_ok=result.code==0;
+      }
+      assert(ready_ok,"dynamic readiness failed after bounded retries");
     }
   }
   if(o.scenario!="02"){sa_contract(o,"static_contract");}
@@ -129,6 +135,12 @@ fn scenario_run(number,action,config,argv) {
   if(o.run_id==""&&file_exists(".lmweblab-local/run-id.txt")){o.run_id=trim(read_file(".lmweblab-local/run-id.txt"));}
   if(o.run_id==""){o.run_id=o.live?substring(str(now()),3,13):"cafe"+number;}
   assert(regex_test(o.run_id,"^[0-9a-f]{4,32}$"),"run id must be hexadecimal");
+  if(file_exists(".lmweblab-local/run-id.txt")){
+    let prior=trim(read_file(".lmweblab-local/run-id.txt"));let prior_state=".lmweblab-local/web-"+prior+".json";
+    if(prior!=o.run_id&&file_exists(prior_state)){
+      let old=json_parse(read_file(prior_state));assert(get(old,"status","")=="down","another deployment is active here; use an isolated copy for fixtures or finish down first");
+    }
+  }
   write_file(".lmweblab-local/run-id.txt",o.run_id);
   o.state=".lmweblab-local/web-"+o.run_id+".json";
   let started=now();
@@ -168,7 +180,7 @@ end _dsl_
     assert(down.code==0,"cleanup incomplete; rerun down.lms, inspect private log");
     assert(up.code==0&&test.code==0,"scenario failed; cleanup completed; inspect private all.log");
   }
-  write_file(".lmweblab-local/"+action+"-timing.json",json_stringify({engine:"lmaws",scenario:number,mode:o.live?"live":"offline",elapsed_ms:now()-started,passed:true}));
+  write_file(".lmweblab-local/"+action+"-timing.json",json_stringify({engine:"lmaws",scenario:number,mode:o.live?"live":"offline",run_id:o.run_id,elapsed_ms:now()-started,passed:true}));
   println("PASS scenario "+number+" "+action+" ("+str(now()-started)+" ms); private cost receipt: .lmweblab-local/status.json");
 }
 fn sa_weighted_test(o,state) {
@@ -180,7 +192,7 @@ fn sa_weighted_test(o,state) {
     assert(num(written.weighted_static_weight)==weight&&num(written.weighted_dynamic_weight)==100-weight,"host did not persist the requested DNS shift");
     let fqdn="lmaws-weighted-"+o.run_id+"."+o.domain;
     let host=get(state,"cf_domain","dfixture.cloudfront.net");
-    let output=".lmweblab-local/split-"+str(step)+".json";
+    let output=".lmweblab-local/split-"+o.run_id+"-"+str(step)+".json";
     let probe=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
 let offline=${!o.live};let n=${o.samples};let weight=${weight};let step=${step};
 let fqdn=${fqdn};let cf=${host};let timeout=${o.timeout};
@@ -202,7 +214,7 @@ while(i<n){
 let p=float(weight)/100.0;let expected=float(n)*p;
 let variance=float(n)*p*(1.0-p);let radius=3.0*sqrt(variance)+1.0;
 assert(abs(float(a)-expected)<=radius);if(weight==0){assert_eq(a,0);}
-file_write(${output},"{\"target_static\":"+str(weight)+",\"static\":"+str(a)+",\"dynamic\":"+str(b)+",\"samples\":"+str(n)+"}");
+file_write(${output},"{\"run_id\":\""+${o.run_id}+"\",\"live\":"+str(${o.live})+",\"target_static\":"+str(weight)+",\"static\":"+str(a)+",\"dynamic\":"+str(b)+",\"samples\":"+str(n)+"}");
 mock.stop();
 end _dsl_
     let code=".lmweblab-local/probe-"+str(step)+".dslb";savedsl(probe,code);
@@ -211,5 +223,5 @@ end _dsl_
     assert(r.code==0,"weighted DNS measurement failed; inspect private probe log");
     push(results,json_parse(read_file(output)));
   }
-  write_file(".lmweblab-local/weighted-results.json",json_stringify(results,2));
+  write_file(".lmweblab-local/weighted-results-"+o.run_id+".json",json_stringify({run_id:o.run_id,live:o.live,steps:results},2));
 }

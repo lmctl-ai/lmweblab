@@ -31,3 +31,20 @@ All live runs below were executed using **`AWS_PROFILE=lmaws`** only in `us-east
 | [`05-static-plus-api`](05-static-plus-api/lmcloud/README.md) | `lmcloud` | `9.15 s` | 10 (`S3` + BPA + Policy + Object, `OAC`, `LogGroup`, `Lambda`, `FunctionURL`, `CloudFront` 2-origin, `Route53`) | **OFFLINE VERIFIED** (`tofu.validate` + `tofu.plan` + `lmcurl` mock + `lmplot` + `lmdraw`); awaiting `lmaws_lambda_exec` role | `$0.0005` live / `$0.0000` offline |
 | [`06-scheduled-report`](06-scheduled-report/lmcloud/README.md) | `lmcloud` | `9.48 s` | 9 (`S3` + BPA, `DynamoDB`, `LogGroup`, `Lambda`, `FunctionURL`, `EventBridge Rule` + `Target`, `LambdaPermission`) | **OFFLINE VERIFIED** (`tofu.validate` + `tofu.plan` + `lmcurl` mock + `lmplot` + `lmdraw`); awaiting `lmaws_lambda_exec` role | `$0.0002` live / `$0.0000` offline |
 | [`11-weighted-dns-two-backends`](11-weighted-dns-two-backends/lmcloud/README.md) | `lmcloud` | `10.04 s` | 14 (`S3` + OAC + `CloudFront` + `SG` + Spot `t4g.nano` + 2 Route 53 weighted `A` records) | **LIVE PROVEN** in `s11r01` (`90/10 -> 50/50 -> 0/100`), 0 leftovers | `$0.0040` live / `$0.0000` offline |
+
+
+## Part A: lmaws scenario engine
+
+| Scenario | Verification | Up / test / down | Cost estimate | Own leftovers |
+|---|---|---|---:|---:|
+| 01 static site | Independent offline lifecycle; static contracts also passed as the static component of live 11 | See 11 for combined live timing | Included in 11 | 0 |
+| 02 dynamic nano | Independent offline lifecycle; dynamic contracts and load also passed in live 11 | See 11 for combined live timing | Included in 11 | 0 |
+| 11 weighted DNS | Live: 90/10 → 50/50 → 0/100, DoH/ECS sampling, all shared HTTP contracts | **335.062 / 126.615 / 496.019 s** | **$0.00312048** successful run | **0** |
+| 03 Lambda hello | Offline persistent lifecycle + real loopback handler HTTP/JSON and first/warm fixture calls | Fake only; no live timing | $0.00 offline | 0 simulated receipts |
+| 04 guestbook | Offline lifecycle, POST/GET, escaping, cursor pagination, TTL field, bounded bodies, p95 | Fake only; no live timing | $0.00 offline | 0 simulated receipts |
+| 05 static + API | Offline S3/Lambda origin wiring, `/` + `/api/*` handler routing and cache rules | Fake only; no live timing | $0.00 offline | 0 simulated receipts |
+| 06 scheduled report | Offline rule wiring, repeated fixture invocations, cold-start-persistent counter and S3 JSON/HTML writes | Fake only; no real EventBridge schedule observed | $0.00 offline | 0 simulated receipts |
+
+The live run sampled **18 static / 2 dynamic**, **5 / 15**, and **0 / 20**. Load p95 was **221.47 ms**. Each sample result carries matching private run and live-mode fields. The complete campaign, including a cleaned failed readiness attempt, is conservatively estimated at **$0.00601854**, with zero active leftovers in both namespaces. Successful HTTP accounting charges the admitted 1000-request/10-MiB bound; no AWS invoice claim is made. [Sanitized numeric evidence](lmaws-results.json) contains no provider identifiers.
+
+New source APIs have actual SDK loopback transport tests for Lambda/EventBridge/TTL/items/S3 notifications and CloudFront origin configuration. The persistent serverless driver rejects live endpoints until explicit role/PassRole authorization. No live Lambda, DynamoDB guestbook or EventBridge success is implied by offline tests. All live AWS interactions used profile `lmaws`; no AWS CLI, admin profile or permission changes were used.

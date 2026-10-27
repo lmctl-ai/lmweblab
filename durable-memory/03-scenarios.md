@@ -11,3 +11,8 @@ Weighted records have an exact run-scoped name, stable static/dynamic identifier
 03–06 are offline only until the Lead explicitly authorizes Lambda live tests. The execution role must be exactly lmaws_lambda_exec; no tests use admin or change IAM. Future live tests must verify actual resource persistence, schedules, provider propagation and cleanup rather than extrapolating from loopback fixtures.
 
 Run `test.sh` for the base stack and `scenarios/test-lmaws.sh` for isolated scenario lifecycles. New APIs require a current source-built lmaws executable on PATH until released. Every HTTP contract uses lmcurl; no AWS CLI is permitted.
+
+
+Scenario 11 live evidence is `scenarios/lmaws-results.json`: up/test/down 335.062/126.615/496.019 seconds, samples 18/2, 5/15, 0/20, load p95 221.47 ms. Successful-run conservative estimate $0.00312048, full two-attempt estimate $0.00601854. Both namespaces were independently empty after cleanup. Private probe records include run/mode metadata; the public numeric summary deliberately omits run identifiers; the first attempt was a cleaned readiness retry-limit failure. 01/02 were live-tested as components of 11 and independently fixture-tested.
+
+The seven-scenario gate is called by root `test.sh`. Lambda fixtures execute the committed handlers through lmcurl with explicit fake boto3 clients; these prove handler behavior, not real AWS scheduling or provider propagation. Scheduled counters persist through simulated cold starts; guestbook cursors do not assume DynamoDB scan order. Status reads durable state and repeated down verifies empty receipts.

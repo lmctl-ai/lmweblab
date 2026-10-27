@@ -1,0 +1,54 @@
+{
+  "engine": "lmaws",
+  "scenario": "11-weighted-dns-two-backends",
+  "live_passed": true,
+  "timings": {
+    "up_seconds": 335.062,
+    "test_seconds": 126.615,
+    "down_seconds": 496.019
+  },
+  "total_seconds": 958.458,
+  "weighted_samples": [
+    {
+      "dynamic": 2,
+      "samples": 20,
+      "static": 18,
+      "target_static": 90
+    },
+    {
+      "dynamic": 15,
+      "samples": 20,
+      "static": 5,
+      "target_static": 50
+    },
+    {
+      "dynamic": 20,
+      "samples": 20,
+      "static": 0,
+      "target_static": 0
+    }
+  ],
+  "load_p95_ms": 221.470682,
+  "leftovers": 0,
+  "independent_lmaws_audit": true,
+  "successful_run_estimated_usd": "0.003120471436434392",
+  "failed_retry_estimated_usd": "0.002898062201874759",
+  "campaign_estimated_usd": "0.006018533638309151",
+  "estimate_basis": "price-table bounds; successful HTTP suite charged a conservative admitted 1000 requests/10MiB; failed first suite retained the same bound; not an AWS invoice",
+  "failed_attempt": {
+    "reason": "readiness retry count exceeded lmcurl maximum; fixed with bounded outer polling",
+    "leftovers": 0
+  },
+  "serverless_scenarios": {
+    "scenarios": [
+      "03",
+      "04",
+      "05",
+      "06"
+    ],
+    "status": "offline fixtures only; no live Lambda deployment authorized"
+  },
+  "compiler": "0.2.426; uppercase let because const is not staged",
+  "host_test_mode": "JVM source host; live weighted SDK additions beyond the v0.1.16 release",
+  "host_sha256": "2a7054fbe3dd1ea4ad0c420e648ed0dcebcee3f07a2a201473dd48775548c936"
+}

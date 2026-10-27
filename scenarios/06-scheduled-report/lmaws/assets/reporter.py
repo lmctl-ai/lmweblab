@@ -1,3 +1,4 @@
+import html
 import json
 import os
 import time
@@ -14,7 +15,11 @@ else:
 
 def handler(event, context):
     global RUNS
-    RUNS += 1
+    if DDB is not None:
+        counter = DDB.update_item(Key={"pk":"counter"}, UpdateExpression="ADD runs :one", ExpressionAttributeValues={":one":1}, ReturnValues="UPDATED_NEW")
+        RUNS = int(counter["Attributes"]["runs"])
+    else:
+        RUNS += 1
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     report = {
         "ok": True,
@@ -27,10 +32,10 @@ def handler(event, context):
         "time_ns": time.time_ns(),
     }
     if DDB is not None:
-        DDB.put_item(Item={"pk": "report", "run_seq": RUNS, **report})
+        DDB.put_item(Item={"pk": "report#" + str(RUNS), "run_seq": RUNS, **report})
     if S3 is not None:
         S3.put_object(Bucket=report["bucket"], Key="latest.json", Body=json.dumps(report).encode("utf-8"), ContentType="application/json")
-        S3.put_object(Bucket=report["bucket"], Key="latest.html", Body=("<html><body><pre>" + json.dumps(report) + "</pre></body></html>").encode("utf-8"), ContentType="text/html")
+        S3.put_object(Bucket=report["bucket"], Key="latest.html", Body=("<html><body><pre>" + html.escape(json.dumps(report)) + "</pre></body></html>").encode("utf-8"), ContentType="text/html")
     return {
         "statusCode": 200,
         "headers": {"Content-Type": "application/json; charset=utf-8"},

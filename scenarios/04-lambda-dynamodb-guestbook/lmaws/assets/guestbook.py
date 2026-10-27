@@ -11,7 +11,7 @@ TTL_SECONDS = int(os.environ.get("TTL_SECONDS", "3600"))
 MEM_ENTRIES = []
 
 def json_default(value):
-    return float(value) if hasattr(value, "as_tuple") else str(value)
+    return (int(value) if value==int(value) else float(value)) if hasattr(value,"as_tuple") else str(value)
 if os.environ.get("LMWEBLAB_OFFLINE") == "1":
     TABLE = None
 else:
@@ -33,10 +33,14 @@ def handler(event, context):
 
     if method == "POST":
         raw_body = (event or {}).get("body") or "{}"
+        if not isinstance(raw_body,str) or len(raw_body.encode("utf-8")) > 8192:
+            return {"statusCode":413,"body":json.dumps({"ok":False,"error":"body too large"})}
         try:
             payload = json.loads(raw_body)
         except (TypeError, ValueError):
             return {"statusCode": 400, "body": json.dumps({"ok": False, "error": "invalid JSON"})}
+        if not isinstance(payload,dict) or len(str(payload.get("author","")))>80 or len(str(payload.get("message","")))>1024:
+            return {"statusCode":400,"body":json.dumps({"ok":False,"error":"bounded object fields required"})}
         author = html.escape(str(payload.get("author", "anonymous")), quote=True)
         message = html.escape(str(payload.get("message", "")), quote=True)
         now_s = int(time.time())
@@ -63,7 +67,9 @@ def handler(event, context):
         start = None
         if cursor:
             try:
+                if len(cursor)>2048: raise ValueError("cursor too large")
                 start = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
+                if not isinstance(start,dict) or set(start)!={"pk"} or not isinstance(start["pk"],str) or len(start["pk"])>1024: raise ValueError("invalid cursor key")
             except Exception:
                 return {"statusCode": 400, "body": json.dumps({"ok": False, "error": "invalid cursor"})}
         response = TABLE.scan(Limit=limit, **({"ExclusiveStartKey": start} if start else {}))
@@ -74,10 +80,14 @@ def handler(event, context):
     else:
         now_s = int(time.time())
         live = [x for x in MEM_ENTRIES if int(x.get("expires_at", 0)) > now_s]
-        offset = int(cursor or "0") if cursor else 0
+        try:
+            offset = int(cursor or "0") if cursor else 0
+            if offset<0: raise ValueError("negative offset")
+        except ValueError:
+            return {"statusCode":400,"body":json.dumps({"ok":False,"error":"invalid cursor"})}
         page = live[offset : offset + limit]
         next_cursor = str(offset + limit) if offset + limit < len(live) else ""
-        total = len(live)
+        total = len(page)
     return {
         "statusCode": 200,
         "headers": {"Content-Type": "application/json; charset=utf-8"},
