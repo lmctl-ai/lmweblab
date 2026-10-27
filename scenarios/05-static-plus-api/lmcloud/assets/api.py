@@ -2,8 +2,14 @@ import json
 import os
 import time
 
+COLD_START = True
+
 
 def handler(event, context):
+    global COLD_START
+    is_cold = COLD_START
+    COLD_START = False
+
     path = (event or {}).get("rawPath", "/api/status")
     qs = (event or {}).get("queryStringParameters") or {}
     return {
@@ -17,9 +23,11 @@ def handler(event, context):
                 "ok": True,
                 "service": "lmweblab-s05-static-plus-api",
                 "run_id": os.environ.get("RUN_ID", "demo01"),
+                "cold_start": is_cold,
                 "path": path,
                 "query": qs,
                 "timestamp": time.time(),
+                "time_ns": time.time_ns(),
             }
         ),
     }

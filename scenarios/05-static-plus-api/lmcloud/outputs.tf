@@ -10,6 +10,10 @@ output "function_name" {
   value = aws_lambda_function.api.function_name
 }
 
+output "function_url" {
+  value = aws_lambda_function_url.api.function_url
+}
+
 output "distribution_domain_name" {
   value = aws_cloudfront_distribution.unified.domain_name
 }

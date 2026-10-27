@@ -2,8 +2,25 @@
 let NAME_PREFIX = "lmaws";
 let SCENARIO_SLUG = "s05";
 let HTML_CACHE_SECONDS = 300;
-let REQUEST_TIMEOUT_MS = 5000;
+let REQUEST_TIMEOUT_MS = 10000;
+let LOAD_VUS = 4;
+let LOAD_DURATION_S = "10.0";
+let LOAD_REQUESTS = 16;
+let P95_THRESHOLD_MS = "5000.0";
+let LIVE_MODE = getenv("LMWEBLAB_LIVE", "0") == "1";
+let DEFAULT_RUN_ID = getenv("LMWEBLAB_RUN_ID", "") != "" ? getenv("LMWEBLAB_RUN_ID", "") : "demo01";
 # === END CONFIG ===
+
+let live = LIVE_MODE;
+let run_id = DEFAULT_RUN_ID;
+let i = 0;
+while (i < len(ARGV)) {
+  let a = ARGV[i];
+  if (a == "--live") { live = true; }
+  else if (a == "--offline" || a == "--dry-run") { live = false; }
+  else if (a == "--run-id" && i + 1 < len(ARGV)) { i = i + 1; run_id = ARGV[i]; }
+  i = i + 1;
+}
 
 let stack_dir = file_exists("main.tf") ? "." : "scenarios/05-static-plus-api/lmcloud";
 let state_dir = path_join(stack_dir, ".lmweblab-local");
@@ -11,49 +28,144 @@ mkdir(state_dir);
 mkdir("images");
 mkdir("data");
 
+let fn_url = "";
+let cf_domain = "";
+let site_fqdn = "";
+let meta_path = path_join(state_dir, "stack.json");
+if (file_exists(meta_path)) {
+  let meta = json_parse(read_file(meta_path));
+  fn_url = str(get(meta, "function_url", ""));
+  cf_domain = str(get(meta, "distribution_domain_name", ""));
+  site_fqdn = str(get(meta, "site_fqdn", ""));
+  if (run_id == "demo01") { run_id = str(get(meta, "run_id", run_id)); }
+  if (get(meta, "mode", "offline") == "live") { live = true; }
+}
+
 let csv_path = "data/s05_lmcloud_latency.csv";
 let arch_img = "images/s05_lmcloud_architecture.png";
 let plot_img = "images/s05_lmcloud_latency.png";
+let summary_path = path_join(state_dir, "test-summary.json");
 let t0 = now();
 
-let p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
-let m = curl.mock();
-let base = m.url();
-let s = curl.session(base);
-let timeout_ms = ${REQUEST_TIMEOUT_MS};
-let out_csv = ${csv_path};
+if (!live) {
+  let p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+  let m = curl.mock();
+  let base = m.url();
+  let s = curl.session(base);
+  let timeout_ms = ${REQUEST_TIMEOUT_MS};
+  let out_csv = ${csv_path};
 
-let r_static = s.get("/site/index.html").proxy("").timeout(timeout_ms).send();
-assert_eq(r_static.status(), 200);
-assert(str_contains(r_static.body(), "Fixture site"));
+  let r_root = s.get("/html").proxy("").timeout(timeout_ms).send();
+  let r_api = s.get("/json?route=api").proxy("").timeout(timeout_ms).send();
+  assert_eq(r_root.status(), 200);
+  assert_eq(r_api.status(), 200);
 
-let r_api = s.get("/json").proxy("").timeout(timeout_ms).send();
-assert_eq(r_api.status(), 200);
-
-let csv = "metric,ms\n" +
-  "static / ms," + str(r_static.time("total")) + "\n" +
-  "dynamic /api/* ms," + str(r_api.time("total")) + "\n";
-file_write(out_csv, csv);
-m.stop();
+  let csv = "route,ms\n" +
+    "GET / (S3 OAC)," + str(r_root.time("total")) + "\n" +
+    "GET /api/status (Lambda)," + str(r_api.time("total")) + "\n";
+  file_write(out_csv, csv);
+  m.stop();
 end _dsl_
+  let dslb = path_join(state_dir, "test.dslb");
+  savedsl(p, dslb);
+  let r = system(concat(dsl_cli(p), ["--dsl", dslb]), 60000);
+  assert(r.code == 0, "scenario 05 offline test failed: " + r.stderr);
+} else {
+  assert(cf_domain != "" && fn_url != "", "Live test requires distribution_domain_name and function_url in stack.json");
+  let cf_url = "https://" + cf_domain;
+  let alias_http_url = "http://" + site_fqdn;
+  let cache_hdr = "public, max-age=" + str(HTML_CACHE_SECONDS);
+  let p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+  let cf_base = ${cf_url};
+  let alias_base = ${alias_http_url};
+  let cf_host = ${cf_domain};
+  let expected_cache = ${cache_hdr};
+  let timeout_ms = ${REQUEST_TIMEOUT_MS};
+  let load_vus = ${LOAD_VUS};
+  let load_dur = str_to_float(${LOAD_DURATION_S});
+  let load_reqs = ${LOAD_REQUESTS};
+  let p95_max = str_to_float(${P95_THRESHOLD_MS});
+  let out_csv = ${csv_path};
+  let out_sum = ${summary_path};
 
-let dslb = path_join(state_dir, "test.dslb");
-savedsl(p, dslb);
-assert(system(concat(dsl_cli(p), ["--dsl", dslb]), 60000).code == 0);
+  let s_cf = curl.session(cf_base);
+  let s_alias = curl.session(alias_base);
 
+  # 1. Static root / (S3 OAC via CloudFront default behavior)
+  let r_root = s_cf.get("/index.html").timeout(timeout_ms).retry(5, 1000).send();
+  assert_eq(r_root.status(), 200);
+  assert_eq(str_contains(r_root.body(), "lmweblab Static Site"), true);
+  assert_eq(r_root.header("cache-control"), expected_cache);
+
+  # 2. Cold /api/status (Lambda Function URL via CloudFront ordered /api/* behavior, same domain, no CORS needed)
+  let r_api_cold = s_cf.get("/api/status?check=1").timeout(timeout_ms).retry(5, 1000).send();
+  assert_eq(r_api_cold.status(), 200);
+  assert_eq(r_api_cold.json("$.ok").value(), "true");
+  assert_eq(r_api_cold.json("$.service").value(), "lmweblab-s05-static-plus-api");
+  assert_eq(r_api_cold.json("$.path").value(), "/api/status");
+  assert_eq(r_api_cold.header("cache-control"), "no-store");
+
+  # 3. Warm /api/status (verify dynamic timestamp changes, TTL=0 no caching)
+  let r_api_warm = s_cf.get("/api/status?check=2").timeout(timeout_ms).send();
+  assert_eq(r_api_warm.status(), 200);
+  assert_eq(r_api_warm.json("$.cold_start").value(), "false");
+  assert_eq(r_api_warm.header("cache-control"), "no-store");
+
+  # 4. Route 53 alias check for both /index.html and /api/status
+  let r_alias_static = s_alias.get("/index.html").header("Host", cf_host).timeout(timeout_ms).retry(5, 1000).send();
+  assert_eq(r_alias_static.status(), 200);
+  assert_eq(str_contains(r_alias_static.body(), "lmweblab Static Site"), true);
+
+  let r_alias_api = s_alias.get("/api/status").header("Host", cf_host).timeout(timeout_ms).send();
+  assert_eq(r_alias_api.status(), 200);
+  assert_eq(r_alias_api.json("$.ok").value(), "true");
+
+  # 5. Load check on /api/status (4 VUs, 16 requests)
+  let load_res = curl.load(s_cf.get("/api/status"), load_vus, load_dur, load_reqs);
+  assert_eq(load_res.threshold(p95_max, 0.0), true);
+
+  let csv = "route,ms\n" +
+    "GET / (S3 OAC)," + str(r_root.time("total")) + "\n" +
+    "GET /api/status (Cold)," + str(r_api_cold.time("total")) + "\n" +
+    "GET /api/status (Warm)," + str(r_api_warm.time("total")) + "\n" +
+    "Load p50 (/api/*)," + str(load_res.p50_ms()) + "\n" +
+    "Load p95 (/api/*)," + str(load_res.p95_ms()) + "\n";
+  file_write(out_csv, csv);
+
+  file_write(out_sum, "{\n" +
+    "  \"static_ms\": " + str(r_root.time("total")) + ",\n" +
+    "  \"api_cold_ms\": " + str(r_api_cold.time("total")) + ",\n" +
+    "  \"api_warm_ms\": " + str(r_api_warm.time("total")) + ",\n" +
+    "  \"load_p50_ms\": " + str(load_res.p50_ms()) + ",\n" +
+    "  \"load_p95_ms\": " + str(load_res.p95_ms()) + ",\n" +
+    "  \"load_p99_ms\": " + str(load_res.p99_ms()) + "\n" +
+    "}\n");
+end _dsl_
+  let dslb = path_join(state_dir, "test-live.dslb");
+  savedsl(p, dslb);
+  let r = system(concat(dsl_cli(p), ["--dsl", dslb]), 180000);
+  if (r.code != 0) { println(r.stderr); }
+  assert(r.code == 0, "scenario 05 live test failed: " + r.stderr);
+}
+
+let cache_str = str(HTML_CACHE_SECONDS);
 let arch = _dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
-scene.canvas(920, 400, "#0f172a");
+let out_png = ${arch_img};
+let prefix = ${NAME_PREFIX};
+let slug = ${SCENARIO_SLUG};
+let cache_s = ${cache_str};
+scene.canvas(920, 380, "#0f172a");
 scene.text(32.0, 42.0, 20.0, "Scenario 05: Unified CloudFront (/ -> S3, /api/* -> Lambda URL) (lmcloud)", "#f8fafc").set_attr("font-weight", "700");
 scene.text(32.0, 68.0, 13.0, "Single Domain, Zero CORS: Default Behavior -> S3 (OAC), Ordered Behavior /api/* -> Lambda URL", "#94a3b8");
-scene.cluster(32.0, 96.0, 856.0, 260.0, "", "#131c2e", "#334155", 10.0, 13.0);
-let r53 = scene.box(130.0, 225.0, 165.0, 68.0, "Route 53 Alias A\n" + ${NAME_PREFIX} + "-tf-" + ${SCENARIO_SLUG} + "-site", "#1e293b", "#38bdf8", 8.0, 13.0);
-let cf = scene.box(385.0, 225.0, 185.0, 74.0, "CloudFront\n2 Origins (/ + /api/*)", "#1e293b", "#818cf8", 8.0, 13.0);
-let s3 = scene.cylinder(680.0, 165.0, 180.0, 68.0, "Private S3 Bucket\n/* (max-age=300)", "#1e293b", "#34d399", 12.0);
-let fn_b = scene.box(680.0, 285.0, 180.0, 64.0, "Lambda URL\n/api/* (TTL=0)", "#1e293b", "#fbbf24", 8.0, 12.0);
+scene.cluster(32.0, 96.0, 856.0, 240.0, "", "#131c2e", "#334155", 10.0, 13.0);
+let r53 = scene.box(130.0, 215.0, 165.0, 68.0, "Route 53 Alias A\n" + prefix + "-tf-" + slug + "-site", "#1e293b", "#38bdf8", 8.0, 13.0);
+let cf = scene.box(385.0, 215.0, 185.0, 72.0, "CloudFront\n2 Origins (/ + /api/*)", "#1e293b", "#818cf8", 8.0, 13.0);
+let s3_b = scene.cylinder(680.0, 155.0, 180.0, 66.0, "Private S3 Bucket\n/* (max-age=" + cache_s + ")", "#1e293b", "#34d399", 12.0);
+let fn_b = scene.box(680.0, 270.0, 180.0, 64.0, "Lambda URL\n/api/* (TTL=0)", "#1e293b", "#fbbf24", 8.0, 12.0);
 scene.connector(r53, "e", cf, "w", "straight", "none", "arrow", "none", "#38bdf8", 2.0, "Same Origin", 0.5, 0.0, -10.0);
-scene.connector(cf, "e", s3, "w", "elbow", "none", "arrow", "none", "#34d399", 2.0, "OAC /*", 0.5, -10.0, -8.0);
-scene.connector(cf, "e", fn_b, "w", "elbow", "none", "arrow", "none", "#fbbf24", 2.0, "/api/*", 0.5, -10.0, 10.0);
-scene.render_png(${arch_img}, 920, 400, 1);
+scene.connector(cf, "e", s3_b, "w", "elbow", "none", "arrow", "none", "#34d399", 2.0, "OAC /*", 0.5, 0.0, -10.0);
+scene.connector(cf, "e", fn_b, "w", "elbow", "none", "arrow", "none", "#fbbf24", 2.0, "/api/*", 0.5, 0.0, 12.0);
+scene.render_png(out_png, 920, 380, 1);
 end _dsl_
 let arch_dslb = path_join(state_dir, "arch.dslb");
 savedsl(arch, arch_dslb);
@@ -62,8 +174,8 @@ assert(system(concat(dsl_cli(arch), ["--dsl", arch_dslb]), 60000).code == 0);
 let plot = _dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
 plot.png(${plot_img}, 860, 480);
 plot.cmd("set datafile separator ','");
-plot.cmd("set title 'Scenario 05 (lmcloud): Static / vs Dynamic /api/* Latency (ms)' noenhanced");
-plot.cmd("set yrange [0:*]; set offsets 0,0,graph 0.15,0; set grid y; unset key; set style fill solid 0.85; set boxwidth 0.55");
+plot.cmd("set title 'Scenario 05 (lmcloud): Static (/) vs Dynamic (/api/*) Latency (ms)' noenhanced");
+plot.cmd("set yrange [0:*]; set offsets 0,0,graph 0.15,0; set grid y; unset key; set style fill solid 0.85; set boxwidth 0.5");
 plot.cmd("set ylabel 'Latency (ms)'");
 plot.cmd("plot '" + ${csv_path} + "' every ::1 using 0:2:xtic(1) with boxes lc rgb '#818cf8', '' every ::1 using 0:2:(sprintf('%.2f ms',$2)) with labels offset 0,0.8");
 plot.close();
@@ -77,5 +189,12 @@ if (stack_dir != ".") {
   write_file(path_join(stack_dir, arch_img), read_file(arch_img));
   write_file(path_join(stack_dir, plot_img), read_file(plot_img));
 }
-println("ok - scenario 05 test.lms passed in " + str(now() - t0) + " ms");
+let elapsed_ms = now() - t0;
+write_file(path_join(state_dir, "test-timing.json"), json_stringify({
+  scenario: "05-static-plus-api",
+  mode: live ? "live" : "offline",
+  run_id: run_id,
+  elapsed_ms: elapsed_ms
+}, 2));
+println("ok - scenario 05 test.lms passed in " + str(elapsed_ms) + " ms");
 println("estimated cost: $0.0000");

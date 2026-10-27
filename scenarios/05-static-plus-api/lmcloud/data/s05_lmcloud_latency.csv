@@ -1,3 +1,3 @@
-metric,ms
-static / ms,0.286
-dynamic /api/* ms,0.115
+route,ms
+GET / (S3 OAC),1.702
+GET /api/status (Lambda),0.328

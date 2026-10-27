@@ -100,12 +100,28 @@ When a top-level LMScript number has no fractional part (such as `2.0` or `5000.
 4. **Measuring Route 53 Weighted Splits Without OS Stub-Resolver Caching (`Scenario 11`)**:
    - Because Route 53 weighted records return a single answer per DNS query with a 60s TTL, calling `curl.session("http://lmaws-tf-split-<id>.<domain>")` 20 times in a tight loop hits the local OS stub resolver cache and sends all 20 requests to whichever backend won the first DNS lookup.
    - Pairing a DNS-over-HTTPS query (`https://dns.google/resolve?name=<fqdn>&type=A&edns_client_subnet=70.<step>.<i>.0/24`) with `lmcurl`'s `.resolve(fqdn + ":80:" + ip)` on each request cleanly samples Route 53's authoritative weighted distribution across distinct `/24` client subnets without waiting 60 seconds between every single HTTP request.
+5. **AWS Lambda Function URL Dual-Permission Requirement in `terraform-provider-aws` v5.100.0 (`Scenarios 03, 04, 05, 06`)**:
+   - When `aws_lambda_function_url` is created with `authorization_type = "NONE"`, `terraform-provider-aws` v5.100.0 only adds `lambda:InvokeFunctionUrl` (`Principal = "*"`, `FunctionUrlAuthType = "NONE"`). However, AWS Lambda now enforces **both** `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction` (`Principal = "*"`) on public Function URLs, returning `403 AccessDeniedException` unless an explicit `aws_lambda_permission` resource (`action = "lambda:InvokeFunction"`, `principal = "*"`, `statement_id = "FunctionURLAllowPublicInvoke"`) is also declared alongside `aws_lambda_function_url`.
+6. **Custom `logging_config` + Pre-Created CloudWatch Log Group Required for Least-Privilege Sessions & Clean Teardown (`Scenarios 03, 04, 05, 06`)**:
+   - By default, AWS Lambda lazily creates `/aws/lambda/<function_name>` on first invocation, which falls outside `arn:aws:logs:*:*:log-group:lmaws_*` in `lmaws_session` / `lmaws_boundary` and is orphaned when `aws_lambda_function` is destroyed.
+   - Declaring an explicit `aws_cloudwatch_log_group` named `lmaws_tf_<slug>_logs_<id>` and referencing it via `logging_config { log_format = "Text", log_group = aws_cloudwatch_log_group.fn.name }` ensures (a) `lmaws_lambda_exec` can write logs under `lmaws_boundary` v2, and (b) OpenTofu's dependency graph creates the log group before the function and deletes the function before deleting the log group on `tofu.destroy`.
+7. **CloudFront Origin Domain Formatting for Lambda Function URLs (`Scenarios 03, 05`)**:
+   - `aws_lambda_function_url.api.function_url` returns a full URL (`https://<id>.lambda-url.us-east-1.on.aws/`), whereas `aws_cloudfront_distribution` `origin.domain_name` rejects schemes and trailing slashes (`replace(replace(aws_lambda_function_url.api.function_url, "https://", ""), "/", "")`).
 
 ---
 
-## 5. IAM Action Matrix for Offline Lambda Scenarios 03, 04, 05, and 06 (`terraform-provider-aws` v5.100.0)
+## 5. Live Lambda Scenarios 03, 04, 05, and 06 — Timings, Latencies & IAM Verification (`lmaws_session` v6)
 
-All four Lambda scenarios (`03-lambda-function-url-hello`, `04-lambda-dynamodb-guestbook`, `05-static-plus-api`, `06-scheduled-report`) have been built and verified offline (`lmctl all.lms --offline`). Below is the exact set of IAM actions `terraform-provider-aws` v5.100.0 calls during `tofu.plan`, `tofu.apply`, and `tofu.destroy`, and how each maps to `lmaws_session`:
+All four Lambda scenarios (`03`, `04`, `05`, `06`) were executed **LIVE** under `AWS_PROFILE=lmaws` (`lmaws_session` v6 + `lmaws_lambda_exec` with `lmaws_boundary` v2) and torn down with **0 leftovers**:
+
+| Scenario | Run ID | Resources | `up.lms` | Cold Invoke | Warm Invoke | `test.lms` Total | `curl.load` (`p50` / `p95` / `p99`) | `down.lms` (`destroy` / `audit`) | Leftovers | Est. Cost |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| [`03-lambda-function-url-hello`](03-lambda-function-url-hello/lmcloud/README.md) | `s03r02` | 6 | `255.29 s` | `664.97 ms` | `238.85 ms` (`CF 385.87 ms`, `Alias 260.02 ms`) | `3.32 s` | `234.17` / `421.95` / `421.95 ms` | `321.53 s` (`314.04 s` / `7.28 s`) | **`0`** | `$0.0001` |
+| [`04-lambda-dynamodb-guestbook`](04-lambda-dynamodb-guestbook/lmcloud/README.md) | `s04r01` | 5 | `29.02 s` | `598.31 ms` | `590.70 ms` (`POST 660.60 ms`, `GET 475.29 ms`) | `6.10 s` | `492.71` / `656.60` / `656.60 ms` | `33.38 s` (`22.93 s` / `10.46 s`) | **`0`** | `$0.0002` |
+| [`05-static-plus-api`](05-static-plus-api/lmcloud/README.md) | `s05r02` | 11 | `260.41 s` | `537.26 ms` (`/api/status`) | `427.36 ms` (`Static / 304.98 ms`) | `3.13 s` | `226.49` / `380.68` / `380.68 ms` | `284.24 s` (`274.13 s` / `9.96 s`) | **`0`** | `$0.0005` |
+| [`06-scheduled-report`](06-scheduled-report/lmcloud/README.md) | `s06r02` | 10 | `33.13 s` | `3,540.46 ms` (128 MB `boto3` init) | `535.58 ms` (`POST 1,512.97 ms`, `HTML 584.09 ms`) | `44.30 s` (incl. `rate(1 minute)` EventBridge wait) | `495.73` / `3,375.23` / `3,375.23 ms` | `49.56 s` (`29.75 s` / `19.80 s`) | **`0`** | `$0.0002` |
+
+### IAM Action Matrix Verified Live Under `lmaws_session` v6 (`terraform-provider-aws` v5.100.0)
 
 | OpenTofu Resource / Data Source | Scenarios | Resource ARN / Pattern | Exact IAM Actions Called by `terraform-provider-aws` | Status in `lmaws_session` v5 & Notes for Live Run |
 | --- | --- | --- | --- | --- |

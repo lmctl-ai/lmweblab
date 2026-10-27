@@ -115,6 +115,13 @@ resource "aws_lambda_function_url" "api" {
   authorization_type = "NONE"
 }
 
+resource "aws_lambda_permission" "allow_public_invoke" {
+  statement_id  = "FunctionURLAllowPublicInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.api.function_name
+  principal     = "*"
+}
+
 resource "aws_cloudfront_distribution" "unified" {
   enabled             = true
   is_ipv6_enabled     = true
