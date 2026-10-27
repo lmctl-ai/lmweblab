@@ -175,12 +175,29 @@ Physical `.lms` lines in each engine directory (including report scripts; inline
 The lmaws engine additionally shares `scenarios/lib/lmaws.lms` (227 lines), root HTTP contracts and Python fixture adapters. The lmcloud engine shares `scenarios/lib/common.lms` and provider configuration. Static-only lmaws prepares ACM even for HTTP, so the live resource graphs differ from the no-ACM lmcloud HTTP variant; timings are not controlled benchmarks.
 
 
-## Remaining lmaws scenarios 07–10 and 12
+## Remaining lmaws scenarios
 
-The lmaws engine now has complete offline lifecycles, deployed-handler loopback HTTP assertions and two pictures per scenario. Queue completion/DLQ, login/expiry/logout, conditional short-code creation and hit counters, two-phase uploads and signed bounds, and all-or-nothing manual DNS cutover are tested. The main-source lmaws schema has 194 host signature lines including its context. A current source build is required until a release includes the additions.
+08, 09, 10 and 12 now have live lmaws evidence; 07 remains offline-only. No lmcloud live rerun was performed in this campaign, and the other engine's measurements above are preserved. Different wait strategies, payload paths and cost bounds prevent a performance ranking.
 
-No new lmcloud files were changed. No live comparison, performance or cost parity is claimed. Scenario 12 reuses weighted records at 0/100 → 100/0 → 0/100; it demonstrates manual cutover without paid health checks. Its probe resolves DNS and identifies backend content using an explicit Host override, so browser TLS failover remains a separate acceptance question. [IAM actions and v6 gaps](IAM_REMAINING.md) were reviewed offline; scenario 07 needs a mapping-specific grant before any authorized live run.
+| Scenario | Up / test / down including settlement (s) | p95 (ms) | Conservative estimate | Leftovers |
+|---|---:|---:|---:|---:|
+| 08 | 24.0 / 21.3 / 619.6 | 427.8 | $0.00325006 | **0** |
+| 09 | 26.6 / 11.2 / 619.5 | 391.8 | $0.00325006 | **0** |
+| 10 | 585.2 / 19.4 / 637.5 | 131.8 | $0.00364746 | **0** |
+| 12 | 323.3 / 208.3 / 432.0 | 142.8 | $0.00334755 | **0** |
 
+| Friction | lmaws correction | Comparison boundary |
+|---|---|---|
+| Authenticated reads | Parse Function URL cookie arrays correctly, reject conflicting session cookies, strong DynamoDB read, Decimal serialization | Handler behavior, independent of deployment engine |
+| Web bucket + Lambda signer | Accept exact run-bound site bucket and verify its actual run tag | Native ownership guard; OpenTofu resource references have a different naming boundary |
+| Python upload configuration | Canonical integer environment values from the SDK JSON reader; import smoke before CloudFront | Native source assembly; no lmcloud change needed |
+| DNS endpoint cutover | Wait 65 seconds after INSYNC for a 60-second TTL, retain counts before assertions, require all samples at endpoint weights | Recursive DNS caching affects either engine |
+| Cleanup proof | Independent inventories plus late-log settlement; failed attempts retained | Empty receipts/state alone cannot exclude delayed runtime logs |
+| Evidence isolation | Fixture copies and run-specific metric paths | Avoid mixing synthetic and live measurements in either engine |
+
+All requests used lmaws/lmcurl scripting; no AWS CLI, admin profile or IAM edits. The maintenance probes use DoH and a CloudFront Host override, proving backend selection rather than browser TLS failover. Public images remain synthetic. The complete eight-attempt price-table estimate is $0.02382644; every namespace finished empty. See [RESULTS](RESULTS.md) and [numeric evidence](lmaws-remaining-results.json).
+
+Relevant code: lmweblab `d096f8d` (safe lifecycle/cookies), `4f3b947` (fixture isolation), `9bf87ad` (DNS cache wait/import smoke); lmaws `d7bb7bd` (exact owned web bucket) and `bdb7cfd` (integer environment). A source build containing these host fixes is required until packaged in a release.
 
 ## Current lmaws Lambda engine comparison
 

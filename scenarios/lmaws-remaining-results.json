@@ -1,0 +1,177 @@
+{
+  "engine": "lmaws",
+  "profile": "lmaws",
+  "region": "us-east-1",
+  "live_scenarios": [
+    {
+      "scenario": "08",
+      "up_s": 23.985,
+      "test_s": 21.264,
+      "down_including_settlement_s": 619.568,
+      "estimated_usd": "0.00325006",
+      "sdk_requests": 234,
+      "leftovers": 0,
+      "all_exit": 0,
+      "p95_ms": 427.844312,
+      "load_requests": 16,
+      "first_http_ms": 700.991,
+      "warm_http_ms": 272.416,
+      "metric_target": "Function URL root"
+    },
+    {
+      "scenario": "09",
+      "up_s": 26.612,
+      "test_s": 11.161,
+      "down_including_settlement_s": 619.491,
+      "estimated_usd": "0.00325006",
+      "sdk_requests": 230,
+      "leftovers": 0,
+      "all_exit": 0,
+      "metric_provenance": "observed live monitor before fixture overwrite; subsequent metrics are run-specific",
+      "p95_ms": 391.837054,
+      "load_requests": 16,
+      "first_http_ms": 692.113,
+      "warm_http_ms": 228.852,
+      "metric_target": "Function URL root"
+    },
+    {
+      "scenario": "10",
+      "up_s": 585.176,
+      "test_s": 19.445,
+      "down_including_settlement_s": 637.469,
+      "estimated_usd": "0.00364746",
+      "sdk_requests": 258,
+      "leftovers": 0,
+      "all_exit": 0,
+      "initial_function_http_ms": 661.339,
+      "warm_function_http_ms": 232.42,
+      "initial_function_status": 404,
+      "p95_ms": 131.828309,
+      "load_requests": 16,
+      "first_http_ms": 221.639,
+      "warm_http_ms": 99.89,
+      "metric_target": "CloudFront gallery object"
+    },
+    {
+      "scenario": "12",
+      "up_s": 323.349,
+      "test_s": 208.311,
+      "down_including_settlement_s": 431.993,
+      "estimated_usd": "0.00334755",
+      "sdk_requests": 309,
+      "leftovers": 0,
+      "all_exit": 0,
+      "cutovers": [
+        {
+          "target_static": 0,
+          "static": 0,
+          "dynamic": 20,
+          "samples": 20
+        },
+        {
+          "target_static": 100,
+          "static": 20,
+          "dynamic": 0,
+          "samples": 20
+        },
+        {
+          "target_static": 0,
+          "static": 0,
+          "dynamic": 20,
+          "samples": 20
+        }
+      ],
+      "p95_ms": 142.758732,
+      "load_requests": 10
+    }
+  ],
+  "attempts": [
+    {
+      "scenario": "08",
+      "selected": false,
+      "all_exit": 1,
+      "estimated_usd": "0.00326086",
+      "sdk_requests": 250,
+      "leftovers": 0,
+      "note": "authenticated read failed; cookie-array handling and strong read fixed"
+    },
+    {
+      "scenario": "09",
+      "selected": true,
+      "all_exit": 0,
+      "estimated_usd": "0.00325006",
+      "sdk_requests": 230,
+      "leftovers": 0,
+      "note": "passed; original numeric metrics retained from the live monitor"
+    },
+    {
+      "scenario": "10",
+      "selected": false,
+      "all_exit": 1,
+      "estimated_usd": "0.00037101",
+      "sdk_requests": 154,
+      "leftovers": 0,
+      "note": "exact web-bucket ownership guard rejected before Lambda creation"
+    },
+    {
+      "scenario": "12",
+      "selected": false,
+      "all_exit": 1,
+      "estimated_usd": "0.00289640",
+      "sdk_requests": 342,
+      "leftovers": 0,
+      "note": "maintenance endpoint-weight assertion failed; added TTL cache wait and pre-assert evidence"
+    },
+    {
+      "scenario": "08",
+      "selected": true,
+      "all_exit": 0,
+      "estimated_usd": "0.00325006",
+      "sdk_requests": 234,
+      "leftovers": 0,
+      "note": "cookie array and strong-read correction"
+    },
+    {
+      "scenario": "10",
+      "selected": false,
+      "all_exit": 1,
+      "estimated_usd": "0.00358326",
+      "sdk_requests": 297,
+      "leftovers": 0,
+      "note": "upload numeric environment produced Python import failure; reproduced and corrected"
+    },
+    {
+      "scenario": "12",
+      "selected": true,
+      "all_exit": 0,
+      "estimated_usd": "0.00334755",
+      "sdk_requests": 309,
+      "leftovers": 0,
+      "note": "bounded TTL cache wait"
+    },
+    {
+      "scenario": "10",
+      "selected": true,
+      "all_exit": 0,
+      "estimated_usd": "0.00364746",
+      "sdk_requests": 258,
+      "leftovers": 0,
+      "note": "canonical integer environment and import smoke before CloudFront"
+    }
+  ],
+  "campaign_estimated_usd": "0.02382644",
+  "final_audit_sdk_estimated_usd": "0.00021980",
+  "final_audit_sdk_requests": 153,
+  "independent_final_audit": {
+    "attempts": 8,
+    "leftovers": 0,
+    "default_lambda_log_groups": 0
+  },
+  "cost_basis": "SDK request journals plus admitted HTTP/Lambda/log bounds and web compute/storage price table; conservative estimate, not invoice; all attempts included; free tier ignored",
+  "cleanup_basis": "Lambda runs include ten-minute final-log-delivery settlement; fresh provider inventory checks every attempt namespace",
+  "aws_cli_used": false,
+  "iam_or_profile_edits": false,
+  "role_modified": false,
+  "scenario_07_run": false,
+  "verification": "Linux JVM source host, lmcurl, synthetic SDK transports, local gates; no CI dispatch"
+}

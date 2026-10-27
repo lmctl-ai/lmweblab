@@ -54,18 +54,28 @@ The live run sampled **18 static / 2 dynamic**, **5 / 15**, and **0 / 20**. Load
 New source APIs have actual SDK loopback transport tests for Lambda/EventBridge/TTL/items/S3 notifications and CloudFront origin configuration. The role/PassRole grant is now active; the live Lambda campaign below is separate from offline fixture evidence. All live AWS interactions used profile `lmaws`; no AWS CLI, admin profile or permission changes were used.
 
 
-## Remaining lmaws scenarios — synthetic verification only
+## Remaining lmaws scenarios: live verification
 
-| Scenario | Offline result | Cleanup proof | Live state |
-|---|---|---|---|
-| [07 SQS worker](07-sqs-worker/lmaws/README.md) | Enqueue → deferred worker → conditional DynamoDB receipt; poison redrive after three receives | Repeat down; independent simulated queues/mapping/functions/logs/table audit: 0 | Pending Lead go and event-source mapping grant |
-| [08 login](08-session-login-demo/lmaws/README.md) | Form asset, fail-closed credentials, random cookie, authenticated read, logical TTL expiry and logout | Repeat down; independent simulated audit: 0 | Pending Lead go |
-| [09 shortener](09-url-shortener/lmaws/README.md) | Conditional create/409, 301/302, unknown 404, atomic counter; Decimal output regression fixed | Repeat down; independent simulated audit: 0 | Pending Lead go |
-| [10 uploads](10-presigned-upload-gallery/lmaws/README.md) | Presign → PUT → exact-byte fetch; wrong type/length, oversize and expired grant rejected; separate host SDK SigV4 test | Repeat down; independent simulated audit: 0 | Pending Lead go; live CloudFront propagation unmeasured |
-| [12 maintenance](12-maintenance-page-failover/lmaws/README.md) | Three all-or-nothing DNS targets persisted; lmcurl origin/cutover fixtures and picture report | Repeat down; independent simulated audit: 0 | Pending Lead go; not automatic health-check failover |
+Scenario 07 remains offline-only pending its separate event-source mapping grant and authorization. The authorized 08, 09, 10 and 12 campaign is complete.
 
-Gate: `scenarios/test-remaining-lmaws.sh`, including four handler unit regressions and live HTTP driver compilation/execution against loopback for 07–09. All new runs cost `$0.0000` offline. The [numeric synthetic receipts](remaining-offline-results.json) record elapsed times, two pictures per scenario and zero simulated leftovers; they contain no real provider data. The lmaws full local gate also passes real SDK loopback mapping/redrive, conditional-write and SigV4 header tests. No real subscription/account interaction, live timings, billing measurements or live zero-leftover claims were added. Existing live results above remain separate.
+| Scenario | Up / test / down including settlement (s) | p95 (ms) | Conservative estimate | Leftovers |
+|---|---:|---:|---:|---:|
+| 08 | 24.0 / 21.3 / 619.6 | 427.8 | $0.00325006 | **0** |
+| 09 | 26.6 / 11.2 / 619.5 | 391.8 | $0.00325006 | **0** |
+| 10 | 585.2 / 19.4 / 637.5 | 131.8 | $0.00364746 | **0** |
+| 12 | 323.3 / 208.3 / 432.0 | 142.8 | $0.00334755 | **0** |
 
+All four authorized lmaws scenarios passed live using only profile `lmaws`. Scenario 07 was not run live. Lambda functions used custom run-scoped log groups; down included the ten-minute final-log-delivery settlement. A fresh lmaws process then found zero leftovers across all eight attempt namespaces, including zero default Lambda log groups. The shared role, IAM, profiles and session files were untouched.
+
+The p95 targets are the Function URL root for 08/09 (4 VUs, 16 requests, five-second window), the CloudFront gallery object for 10 (same load bound), and the dynamic app health endpoint for 12 (8 VUs, 10 requests). Initial/warm Function URL timings and the separate gallery fetch timings are in the sanitized summary. These are different request paths, not a controlled engine benchmark.
+
+Scenario 08 verified login, authenticated cookie reads, logical TTL expiry and logout. Scenario 09 verified conditional creation/409, 301/302, missing-code 404 and atomic hit increments. Scenario 10 verified real signed PUT and CloudFront bytes/content type, plus changed type/length, oversized requests and expiry rejection. The tiny payload checks byte transport and declared MIME type; it does not decode images or generate thumbnails. Scenario 12 observed **0/20 → 20/0 → 0/20 static/dynamic hits**, proving manual cutover and return without health checks or automatic failover.
+
+Recovered attempts remain in the cost and exit records: 08 exposed Function URL cookie-array handling and the need for strong authenticated reads; 10 exposed the exact web-bucket ownership name mismatch and JSON-double environment formatting; 12 exposed an endpoint-weight assertion before recursive DNS caches expired. That failed probe did not retain its counts; the corrected driver saves counts before assertions and waits beyond the 60-second TTL. Fixture checks now run in isolated copies and metrics have run-specific filenames. Scenario 09's original numeric readings were retained from the live monitor before a fixture check overwrote the former generic metric file; this limitation is explicit in the summary.
+
+Campaign estimate, including all recovered attempts and final inventory calls: **$0.02382644**. These are conservative price-table estimates, not an AWS invoice. SDK request journals are combined with admitted HTTP/Lambda/log bounds and actual web compute/storage lifetime. Free-tier deductions are ignored. [Sanitized timings and cost evidence](lmaws-remaining-results.json); raw responses, resource identifiers and receipts stay private.
+
+Local gates: lmaws `test.sh`, lmweblab `test.sh`, and `scenarios/test-remaining-lmaws.sh`; public pictures remain synthetic. No CI gate or private workflow dispatch was used.
 
 ## Current lmaws Lambda live campaign (session v6, boundary v2)
 

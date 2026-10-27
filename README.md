@@ -39,3 +39,5 @@ Live Part A passed both phases: p95 **391 ms HTTP** and **152 ms HTTPS**. The su
 
 
 The [scenario catalog](scenarios/README.md) adds independent lmaws implementations of 01 (static site), 02 (dynamic nano), 03–06 (live-verified Lambda patterns), and 11 (weighted DNS). The live weighted and Lambda campaigns passed; every attempt namespace was independently empty after the required settlement window; [numeric results and limits](scenarios/RESULTS.md) distinguish real measurements from fixtures. Run from each `scenarios/NN-name/lmaws/` directory with `lmctl all.lms --offline`; new APIs currently require a source-built lmaws on PATH.
+
+The lmaws scenarios [08 login, 09 shortener, 10 uploads and 12 maintenance](scenarios/RESULTS.md#remaining-lmaws-scenarios-live-verification) passed live with zero leftovers in every attempt namespace. The complete campaign estimate, including recovered failures and final checks, was **$0.02382644**. Pictures remain synthetic; 07 stays offline-only pending its separate grant.
