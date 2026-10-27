@@ -56,7 +56,7 @@ New source APIs have actual SDK loopback transport tests for Lambda/EventBridge/
 
 ## Remaining lmaws scenarios: live verification
 
-Scenario 07 remains offline-only pending its separate event-source mapping grant and authorization. The authorized 08, 09, 10 and 12 campaign is complete.
+Scenario 07 was excluded from this live GO; a separate authorization and confirmation of its mapping permissions are required. The authorized 08, 09, 10 and 12 campaign is complete.
 
 | Scenario | Up / test / down including settlement (s) | p95 (ms) | Conservative estimate | Leftovers |
 |---|---:|---:|---:|---:|
