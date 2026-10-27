@@ -117,3 +117,22 @@ All four Lambda scenarios (`03-lambda-function-url-hello`, `04-lambda-dynamodb-g
 | `aws_lambda_function` | 03, 04, 05, 06 | `arn:aws:lambda:us-east-1:<account>:function:lmaws_tf_s0*` + role `arn:aws:iam::<account>:role/lmaws_lambda_exec` | `iam:PassRole` (with `iam:PassedToService = lambda.amazonaws.com`), `lambda:CreateFunction`, `lambda:GetFunction`, `lambda:GetFunctionConfiguration`, `lambda:GetFunctionCodeSigningConfig`, `lambda:ListVersionsByFunction`, `lambda:ListTags`, `lambda:TagResource`, `lambda:UpdateFunctionCode`, `lambda:UpdateFunctionConfiguration`, `lambda:DeleteFunction` | **Requires Lambda + PassRole grant**: Needs (1) `lambda:*` on `arn:aws:lambda:*:*:function:lmaws-*` and `arn:aws:lambda:*:*:function:lmaws_*`, and (2) `iam:PassRole` on `arn:aws:iam::*:role/lmaws_*` conditioned on `StringEquals: {"iam:PassedToService": "lambda.amazonaws.com"}`. (`terraform-provider-aws` reads function state via `lambda:GetFunction` and `lambda:ListVersionsByFunction` on the function ARN; it does not require `lambda:ListFunctions` on `*`.) |
 | `aws_lambda_function_url` | 03, 04, 05, 06 | `arn:aws:lambda:us-east-1:<account>:function:lmaws_tf_s0*` | `lambda:CreateFunctionUrlConfig`, `lambda:GetFunctionUrlConfig`, `lambda:UpdateFunctionUrlConfig`, `lambda:DeleteFunctionUrlConfig`, plus `lambda:AddPermission` (`FunctionURLAllowPublicAccess`), `lambda:GetPolicy`, `lambda:RemovePermission` | Covered by `lambda:*` on `arn:aws:lambda:*:*:function:lmaws_*`. (When `authorization_type = "NONE"`, `terraform-provider-aws` automatically calls `lambda:AddPermission` / `lambda:GetPolicy` / `lambda:RemovePermission` on the function ARN.) |
 | `aws_cloudwatch_event_rule`, `aws_cloudwatch_event_target`, `aws_lambda_permission` | 06 | `arn:aws:events:us-east-1:<account>:rule/lmaws_tf_s06_rule_*` | `events:PutRule`, `events:DescribeRule`, `events:ListTagsForResource`, `events:TagResource`, `events:PutTargets`, `events:ListTargetsByRule`, `events:RemoveTargets`, `events:DeleteRule`, plus `lambda:AddPermission` / `lambda:GetPolicy` / `lambda:RemovePermission` | **Requires EventBridge (`events:*`) in `NamedTestResources`**: Add `"events:*"` to `Action` and `"arn:aws:events:*:*:rule/lmaws-*"`, `"arn:aws:events:*:*:rule/lmaws_*"` to `Resource` in `Sid: NamedTestResources` of `lmaws_session`. |
+
+
+## lmaws scenario engine (Part A)
+
+Scenarios 01 and 02 split the original native-host stack into independent deployments, using the same root `shared/site`, `shared/userdata` and lmcurl contracts as the base project. Scenario 11 composes both backends and adds weighted DNS. The scripts use scalar interpolation and uppercase `let` because installed LMScript 0.2.426 rejects `const`; no list splice is required.
+
+| Concern | lmaws | lmcloud / OpenTofu |
+|---|---|---|
+| State and recovery | Native private atomic state, per-step creation receipts and owned-resource rediscovery | Provider graph and private Terraform state |
+| HTTP custom alias | Prepares ACM before initial distribution even for HTTP | HTTP fixture uses the CloudFront Host override; ACM optional |
+| Weight shifts | One `web.step("dns_weighted", settings)` call, bounded INSYNC wait | Change two weights then apply provider graph |
+| DNS sampling | lmcurl DoH with unique ECS /24 per sample, explicit resolve, three-sigma binomial band | Same DoH/resolve method, percentage tolerance |
+| Initial name collision | Refused; first weighted write is CREATE | Provider detects conflicts during apply |
+| Later drift | Owned targets must match before shift or delete | Refresh/plan exposes drift |
+| Nano placement | Bounded subnet/type capacity fallback with distinct idempotency tokens | Provider launch and existing guarded teardown fallback |
+| Cost | Durable price-table estimate; admitted HTTP upper bound retained on interruption | Documented price-table estimate |
+| Lambda 03–06 | Offline only until the Lead authorizes live role/PassRole testing | Offline only until the same authorization |
+
+Failure modes fixed while building the lmaws engine: standalone dynamic DNS no longer requires a certificate step; weighted steps are repeatable instead of being skipped as already complete; initial records cannot be adopted; all exact-name records are included in discovery, including foreign identifiers; teardown refuses foreign records. A local PATH executable older than v0.1.16 is rejected before provider dispatch. `scenarios/test-lmaws.sh` copies fixtures without private state to avoid replaying an already-destroyed run.

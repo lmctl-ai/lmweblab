@@ -26,3 +26,15 @@ Every scenario directory (`scenarios/NN-name/`) is self-contained with editable 
 - [`scenarios/lib/common.lms`](lib/common.lms): Shared helpers for CLI/env flags, `run_id` lifecycle, caller `/32` IP detection via `lmcurl`, and independent zero-leftover verification via `lmaws`.
 - [`scenarios/COMPARE.md`](COMPARE.md): Engineering comparison, OpenTofu friction notes, IAM action matrix for Lambda Scenarios 03–06, and `lmcloud` / `lmscript` improvements (`lmcloud v0.1.11` and `v0.1.12`).
 - [`scenarios/RESULTS.md`](RESULTS.md): Sanitized live run timings, latency and traffic-split measurements, cost estimates, and zero-leftover proofs.
+
+
+## lmaws engine
+
+The [`lmaws/` implementations](../lmaws/README.md) also have independent scenario directories:
+
+- [01 static site](01-static-site-s3-cloudfront/lmaws/README.md)
+- [02 dynamic nano](02-dynamic-page-spot-nano/lmaws/README.md)
+- [03 Lambda hello](03-lambda-function-url-hello/lmaws/README.md), [04 guestbook](04-lambda-dynamodb-guestbook/lmaws/README.md), [05 static + API](05-static-plus-api/lmaws/README.md), [06 scheduled report](06-scheduled-report/lmaws/README.md): offline only pending authorization.
+- [11 weighted DNS](11-weighted-dns-two-backends/lmaws/README.md)
+
+Run each from its engine directory: `lmctl all.lms --offline`. Live commands require `AWS_PROFILE=lmaws` and an authorized `LMWEBLAB_DOMAIN`; every run keeps its own ignored state. New weighted/Lambda APIs require the current lmaws source build on PATH until a release includes them. The original combined-stack entry points remain available.
