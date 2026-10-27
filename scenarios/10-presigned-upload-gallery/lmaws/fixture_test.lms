@@ -1,0 +1,18 @@
+# === CONFIG ===
+let TIMEOUT_MS=5000;
+let EXPIRY_SECONDS=300;
+# === END CONFIG ===
+mkdir(".lmweblab-local");let token=str(now());let ready=".lmweblab-local/upload-"+token+".url";let stop=".lmweblab-local/upload-"+token+".stop";
+let started=system(["python3","../../lib/remaining_upload_spawn.py",ready,stop],30000);assert(started.code==0,"upload fixture startup failed");let base=trim(read_file(ready));
+let p=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let s=curl.session(${base});
+let signed=s.post("/presign").body("{\"key\":\"demo.png\",\"content_type\":\"image/png\",\"size\":3}").timeout(${TIMEOUT_MS}).proxy("").send();assert_eq(signed.status(),200);assert_eq(signed.json("$.expires_in").to_int(),${EXPIRY_SECONDS});let url=signed.json("$.url").value();
+let put=curl.session(url).put("").body("PNG").header("content-type","image/png").timeout(${TIMEOUT_MS}).proxy("").send();assert_eq(put.status(),200);
+let fetch=s.get("/gallery/demo.png").timeout(${TIMEOUT_MS}).proxy("").send();assert_eq(fetch.status(),200);assert_eq(fetch.body(),"PNG");assert_eq(fetch.header("content-type"),"image/png");
+let bad=curl.session(url).put("").body("PNG").header("content-type","text/plain").proxy("").send();assert_eq(bad.status(),403);
+let size=curl.session(url).put("").body("PNGG").header("content-type","image/png").proxy("").send();assert_eq(size.status(),403);
+let reject=s.post("/presign").body("{\"key\":\"large.png\",\"content_type\":\"image/png\",\"size\":1048577}").proxy("").send();assert_eq(reject.status(),413);
+let reject_type=s.post("/presign").body("{\"key\":\"bad.png\",\"content_type\":\"text/plain\",\"size\":3}").proxy("").send();assert_eq(reject_type.status(),415);
+let expired=s.get("/__expire").proxy("").send();assert_eq(expired.status(),204);let retry=curl.session(url).put("").body("PNG").header("content-type","image/png").proxy("").send();assert_eq(retry.status(),403);
+end _dsl_
+savedsl(p,".lmweblab-local/upload-test.dslb");let r=system(concat(dsl_cli(p),["--dsl",".lmweblab-local/upload-test.dslb"]),120000);write_file(stop,"done");write_file(".lmweblab-local/upload-test.log",r.stdout+r.stderr);assert(r.code==0,"upload HTTP assertions failed");println("PASS two-phase upload, byte fetch, signed bounds and expiry (synthetic)");

@@ -1,0 +1,20 @@
+# === CONFIG ===
+let REGION="us-east-1";
+let DOMAIN=getenv("LMWEBLAB_DOMAIN","example.com");
+let NAME_PREFIX="lmaws";
+let SLUG="s10";
+let ROLE="lmaws_lambda_exec";
+let RUNTIME="python3.12";
+let HANDLER="gallery.handler";
+let SOURCE_FILE="assets/gallery.py";
+let MEMORY_MB=128;
+let TIMEOUT_S=10;
+let TTL_SECONDS=3600;
+let MAX_UPLOAD_BYTES=1048576;
+let CONTENT_TYPES="image/png,image/jpeg,image/webp,image/gif";
+let UPLOAD_EXPIRY_SECONDS=10;
+let CACHE_SECONDS=30;
+let COST_CAP_USD="0.05";
+# === END CONFIG ===
+import "../../lib/remaining.lms";
+rw_run("10","test",{region:REGION,domain:DOMAIN,prefix:NAME_PREFIX,slug:SLUG,role:ROLE,runtime:RUNTIME,handler:HANDLER,source_file:SOURCE_FILE,memory_mb:MEMORY_MB,timeout_s:TIMEOUT_S,ttl_seconds:TTL_SECONDS,max_upload_bytes:MAX_UPLOAD_BYTES,content_types:CONTENT_TYPES,upload_expiry_seconds:UPLOAD_EXPIRY_SECONDS,cache_seconds:CACHE_SECONDS,cap:COST_CAP_USD},ARGV);

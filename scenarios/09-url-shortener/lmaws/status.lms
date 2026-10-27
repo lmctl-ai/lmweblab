@@ -1,0 +1,9 @@
+# === CONFIG ===
+let REGION = "us-east-1";
+let DOMAIN = getenv("LMWEBLAB_DOMAIN", "example.com");
+let NAME_PREFIX = "lmaws";
+let SLUG = "url_shortener";
+let COST_CAP_USD = "0.05";
+# === END CONFIG ===
+import "../../lib/remaining.lms";
+rw_run("09", "status", {region:REGION,domain:DOMAIN,prefix:NAME_PREFIX,slug:SLUG,cap:COST_CAP_USD}, ARGV);

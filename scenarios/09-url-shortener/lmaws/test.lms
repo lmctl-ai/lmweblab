@@ -1,0 +1,12 @@
+# === CONFIG ===
+let REGION = "us-east-1";
+let DOMAIN = getenv("LMWEBLAB_DOMAIN", "example.com");
+let NAME_PREFIX = "lmaws";
+let SLUG = "url_shortener";
+let RUNTIME = "python3.12";
+let HANDLER = "url_shortener.handler";
+let SOURCE_FILE = "assets/url_shortener.py";
+let COST_CAP_USD = "0.05";
+# === END CONFIG ===
+import "../../lib/remaining.lms";
+rw_run("09", "test", {region:REGION,domain:DOMAIN,prefix:NAME_PREFIX,slug:SLUG,runtime:RUNTIME,handler:HANDLER,source_file:SOURCE_FILE,cap:COST_CAP_USD}, ARGV);

@@ -1,0 +1,13 @@
+# === CONFIG ===
+let REGION = "us-east-1";
+let DOMAIN = getenv("LMWEBLAB_DOMAIN", "example.com");
+let NAME_PREFIX = "lmaws";
+let SLUG = "session_login";
+let RUNTIME = "python3.12";
+let HANDLER = "session_login.handler";
+let SOURCE_FILE = "assets/session_login.py";
+let TTL_SECONDS = 10;
+let COST_CAP_USD = "0.05";
+# === END CONFIG ===
+import "../../lib/remaining.lms";
+rw_run("08", "test", {region:REGION,domain:DOMAIN,prefix:NAME_PREFIX,slug:SLUG,runtime:RUNTIME,ttl_seconds:TTL_SECONDS,handler:HANDLER,source_file:SOURCE_FILE,cap:COST_CAP_USD}, ARGV);
