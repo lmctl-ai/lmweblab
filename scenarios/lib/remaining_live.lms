@@ -14,7 +14,7 @@ end _dsl_
 # Record the first and warm invocation plus a bounded 4-VU/16-request p95.
 # The output is private and deliberately contains only status/timing numbers.
 fn rw_record_metrics(o,path,label) {
-  let output=".lmweblab-local/remaining-metrics-"+label+".json";
+  let output=".lmweblab-local/remaining-metrics-"+get(o,"run_id","fixture")+"-"+label+".json";
   let p=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
 let s=curl.session(${o.url});
 let first=s.get(${path}).proxy("").timeout(5000).retry(3,500).send();
