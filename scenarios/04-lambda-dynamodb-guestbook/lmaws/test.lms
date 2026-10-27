@@ -13,8 +13,9 @@ let TTL_SECONDS = 3600;
 let SCHEDULE = "rate(1 minute)";
 let REQUEST_TIMEOUT_MS = 10000;
 let LOAD_SAMPLES = 16;
+let LOAD_DURATION_S = "5.0";
 let P95_LIMIT_MS = "2000.0";
 let COST_CAP_USD = "0.05";
 # === END CONFIG ===
 import "../../lib/serverless.lms";
-sv_run("04","test",{region:REGION,domain:DOMAIN,prefix:NAME_PREFIX,slug:SLUG,role:ROLE,runtime:RUNTIME,handler:HANDLER,source_file:SOURCE_FILE,memory_mb:MEMORY_MB,timeout_s:TIMEOUT_S,ttl_seconds:TTL_SECONDS,schedule:SCHEDULE,timeout_ms:REQUEST_TIMEOUT_MS,samples:LOAD_SAMPLES,p95_ms:P95_LIMIT_MS,cap:COST_CAP_USD},ARGV);
+sv_run("04","test",{region:REGION,domain:DOMAIN,prefix:NAME_PREFIX,slug:SLUG,role:ROLE,runtime:RUNTIME,handler:HANDLER,source_file:SOURCE_FILE,memory_mb:MEMORY_MB,timeout_s:TIMEOUT_S,ttl_seconds:TTL_SECONDS,schedule:SCHEDULE,timeout_ms:REQUEST_TIMEOUT_MS,samples:LOAD_SAMPLES,load_seconds:LOAD_DURATION_S,p95_ms:P95_LIMIT_MS,cap:COST_CAP_USD},ARGV);

@@ -52,6 +52,7 @@ let cf_url = ${get(meta, "cf_url", "")};
 let site_url = ${get(meta, "site_url", "")};
 let timeout_ms = ${timeout_ms};
 let samples = ${samples};
+let load_seconds=str_to_float(${get(o,"load_seconds","5.0")});
 let p95_limit = str_to_float(${p95_ms});
 let metrics = "{\"scenario\":\"" + ${number} + "\",\"live\":true";
 let s = curl.session(lambda_url);
@@ -65,7 +66,7 @@ if (${number} == "03") {
   assert(cf_url!=""&&site_url!="");
   let cf=curl.session(cf_url).get("/?name=cloudfront").proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(cf.status(),200);assert_eq(cf.json("$.run_id").value(),${o.run_id});
   let alias=curl.session(site_url).get("/?name=alias").proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(alias.status(),200);assert_eq(alias.json("$.run_id").value(),${o.run_id});
-  let load = curl.load(curl.session(cf_url).get("/").proxy("").timeout(timeout_ms), 4, 1.0, samples);assert_eq(load.threshold(p95_limit, 0.0), true);
+  let load = curl.load(curl.session(cf_url).get("/").proxy("").timeout(timeout_ms), 4, load_seconds, samples);file_write(${output}+".load.json","{\"requests\":"+str(load.requests())+",\"error_rate\":"+str(load.error_rate())+",\"p95_ms\":"+str(load.p95_ms())+"}");assert_eq(load.requests(),samples);assert_eq(load.threshold(p95_limit, 0.0), true);
   metrics = metrics + ",\"p95_ms\":" + str(load.p95_ms());
 } else if (${number} == "04") {
   let a = s.post("/entries").json("{\"author\":\"live-a\",\"message\":\"<script>alert(1)</script>\"}").proxy("").timeout(timeout_ms).send();
@@ -78,21 +79,21 @@ if (${number} == "03") {
   assert(page.json("$.items[0].id").value()!=next.json("$.items[0].id").value());
   let invalid=s.post("/entries").body("[]").proxy("").timeout(timeout_ms).send();assert_eq(invalid.status(),400);
   let huge=s.post("/entries").body(str_repeat("x",9000)).proxy("").timeout(timeout_ms).send();assert_eq(huge.status(),413);
-  let load = curl.load(s.get("/entries?limit=1").proxy(""), 4, 1.0, samples);assert_eq(load.threshold(p95_limit, 0.0), true);metrics = metrics + ",\"p95_ms\":" + str(load.p95_ms());
+  let load = curl.load(s.get("/entries?limit=1").proxy(""), 4, load_seconds, samples);file_write(${output}+".load.json","{\"requests\":"+str(load.requests())+",\"error_rate\":"+str(load.error_rate())+",\"p95_ms\":"+str(load.p95_ms())+"}");assert_eq(load.requests(),samples);assert_eq(load.threshold(p95_limit, 0.0), true);metrics = metrics + ",\"p95_ms\":" + str(load.p95_ms());
 } else if (${number} == "05") {
   assert(cf_url != "");let page = curl.session(cf_url).get("/").proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(page.status(),200);
   let api = curl.session(cf_url).get("/api/info?probe=live").proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(api.status(),200);assert(api.assert_json_schema("{\"type\":\"object\",\"required\":[\"ok\",\"path\",\"query\"]}"));assert_eq(api.json("$.path").value(),"/api/info");assert(api.header("cache-control") != "");assert(page.header("cache-control")!="");assert_eq(api.json("$.query.probe").value(),"live");
   let alias = curl.session(site_url).get("/").proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(alias.status(),200);
   assert(api.header("cache-control") == "no-store");assert(api.header("access-control-allow-origin") == "");
   assert(str_contains(api.body(), "probe"));
-  let load = curl.load(curl.session(cf_url).get("/api/info").proxy(""), 4, 1.0, samples);assert_eq(load.threshold(p95_limit, 0.0), true);metrics = metrics + ",\"p95_ms\":" + str(load.p95_ms());
+  let load = curl.load(curl.session(cf_url).get("/api/info").proxy(""), 4, load_seconds, samples);file_write(${output}+".load.json","{\"requests\":"+str(load.requests())+",\"error_rate\":"+str(load.error_rate())+",\"p95_ms\":"+str(load.p95_ms())+"}");assert_eq(load.requests(),samples);assert_eq(load.threshold(p95_limit, 0.0), true);metrics = metrics + ",\"p95_ms\":" + str(load.p95_ms());
 } else if (${number} == "06") {
   let report = s.get("/report.json").proxy("").timeout(timeout_ms).retry(5,1000).send();assert(report.status() == 200 || report.status() == 404);
   if (report.status() == 200) { assert(report.assert_json_schema("{\"type\":\"object\",\"required\":[\"ok\",\"scheduled_runs\",\"latest_iso\"]}")); }
   let previous=report.json("$.scheduled_runs").to_int();assert(previous>=2);
   let unchanged=s.get("/report.json").proxy("").timeout(timeout_ms).send();assert(unchanged.json("$.scheduled_runs").to_int()>=previous);
   let html=s.get("/report.html").proxy("").timeout(timeout_ms).send();assert_eq(html.status(),200);assert(str_contains(html.header("content-type"),"text/html"));assert(str_contains(html.body(),"scheduled_runs"));
-  let load=curl.load(s.get("/report.json").proxy("").timeout(timeout_ms),4,1.0,samples);assert_eq(load.threshold(p95_limit,0.0),true);
+  let load=curl.load(s.get("/report.json").proxy("").timeout(timeout_ms),4,load_seconds,samples);file_write(${output}+".load.json","{\"requests\":"+str(load.requests())+",\"error_rate\":"+str(load.error_rate())+",\"p95_ms\":"+str(load.p95_ms())+"}");assert_eq(load.requests(),samples);assert_eq(load.threshold(p95_limit,0.0),true);
   metrics=metrics+",\"scheduled_runs\":"+str(previous)+",\"p95_ms\":"+str(load.p95_ms());
 }
 metrics = metrics + "}\n";file_write(${output}, metrics);

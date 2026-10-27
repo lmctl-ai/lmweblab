@@ -66,6 +66,7 @@ fn sv_test(o){
     sv_step(o,"report",{});
     let report=json_parse(read_file(".lmweblab-local/state.json"));
     let latest=json_parse(report.latest_json_body);assert(latest.scheduled_runs>=2,"two actual scheduled reports are required");
+    assert(num(report.table_items)>=latest.scheduled_runs+2,"DynamoDB counter/latest/report rows missing");
     assert(contains(report.latest_html_body,"<html>"),"S3 HTML artifact missing");
   }
   # The conservative admitted bound covers the cold/warm calls, retries and short load.
@@ -87,14 +88,18 @@ let run=cloud.serverless_stack(${o.run_id},${o.domain},${path});let removed=run.
 file_write(".lmweblab-local/down.json",removed.json());
 end _dsl_
   let serverless_result=sv_dispatch(program,o,"down",1800000);
-  assert(web_result.code==0&&serverless_result.code==0,"teardown incomplete; both cleanup paths attempted; inspect private logs");
+  # Provider inventory below is authoritative even if emergency cleanup recovered an earlier failure.
+  write_file(".lmweblab-local/cleanup-exits-"+o.run_id+".json",json_stringify({web:web_result.code,serverless:serverless_result.code}));
   let audit=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
 let cloud=aws.region(${o.region});if(${!o.live}){cloud=cloud.demo();}
-let serverless=cloud.serverless_find(${o.run_id});check(serverless.len()==0);
+let serverless=cloud.serverless_find(${o.run_id});file_write(".lmweblab-local/inventory-"+${o.run_id}+".json",serverless.json());check(serverless.len()==0);
 if(${has_web}){check(cloud.web_find(${o.run_id},${o.domain}).len()==0);}
 file_write(".lmweblab-local/audit-"+${o.run_id}+".json","{\"leftovers\":0,\"live\":"+str(${o.live})+"}");
 end _dsl_
   sv_sdk(audit,o,"audit",180000);
+  let denied=false;
+  for(path in [sv_state(o),sv_web_state(o)]){if(file_exists(path)){let text=read_file(path);if(contains(text,"AccessDenied")||contains(text,"UnauthorizedOperation")||contains(text,"not authorized to perform")){denied=true;}}}
+  assert(!denied,"action denial observed; cleanup verified but stop scenario and report private provider error");
 }
 fn sv_run(number,action,config,argv){
   let o=merge(config,{number:number,live:getenv("LMWEBLAB_LIVE","0")=="1",run_id:getenv("LMWEBLAB_RUN_ID","")});
@@ -136,9 +141,10 @@ fn sv_run(number,action,config,argv){
   }else if(action=="all"){
     let settings=".lmweblab-local/config-"+o.run_id+".json";write_file(settings,json_stringify(o));
     let args=[o.live?"--live":"--offline","--config",settings,"--run-id",o.run_id,"--domain",o.domain];
-    let up=system(concat(["lmctl","up.lms"],args),2400000);let tested={code:1,stdout:"",stderr:""};
+    let up_started=now();let up=system(concat(["lmctl","up.lms"],args),2400000);let up_ms=now()-up_started;let test_started=now();let tested={code:1,stdout:"",stderr:""};
     if(up.code==0){tested=system(concat(["lmctl","test.lms"],args),900000);}
-    let down=system(concat(["lmctl","down.lms"],args),2400000);
+    let test_ms=now()-test_started;let down_started=now();let down=system(concat(["lmctl","down.lms"],args),2400000);let down_ms=now()-down_started;
+    write_file(".lmweblab-local/phases-"+o.run_id+".json",json_stringify({run_id:o.run_id,live:o.live,up_ms:up_ms,test_ms:test_ms,down_ms:down_ms,up_exit:up.code,test_exit:tested.code,down_exit:down.code}));
     write_file(".lmweblab-local/all-"+o.run_id+".log",up.stdout+up.stderr+tested.stdout+tested.stderr+down.stdout+down.stderr);
     assert(down.code==0,"cleanup incomplete; rerun down with this run id; inspect private log");
     assert(up.code==0&&tested.code==0,"scenario failed; cleanup verified; stop this scenario and inspect private error");
