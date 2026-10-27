@@ -39,7 +39,7 @@ end _dsl_
 }
 fn sa_up(o) {
   if(o.scenario!="02") {
-    sa_step(o,"bucket",{site_dir:o.root+"/shared/site"});
+    sa_step(o,"bucket",{site_dir:get(o,"site_dir",o.root+"/shared/site")});
     sa_step(o,"certificate",{});
     sa_step(o,"distribution",{});
     sa_step(o,"dns_site",{});
@@ -74,7 +74,7 @@ end _dsl_
     sa_exec(compute,o,"compute",600000);
     sa_step(o,"dns_app",{});
   }
-  if(o.scenario=="11"){sa_step(o,"dns_weighted",{static_weight:o.first_weight,dynamic_weight:100-o.first_weight});}
+  if(o.scenario=="11"||o.scenario=="12"){sa_step(o,"dns_weighted",{static_weight:o.first_weight,dynamic_weight:100-o.first_weight});}
 }
 fn sa_contract(o,script) {
   let r=system(["lmctl",o.root+"/shared/tests/"+script+".lms",o.live?"--live":"--offline"],600000);
@@ -108,7 +108,7 @@ end _dsl_
   }
   if(o.scenario!="02"){sa_contract(o,"static_contract");}
   if(o.scenario!="01"){sa_contract(o,"dynamic_contract");sa_contract(o,"load_check");}
-  if(o.scenario=="11"){sa_weighted_test(o,state);}
+  if(o.scenario=="11"||o.scenario=="12"){sa_weighted_test(o,state);}
   # Preserve the admitted bound if interrupted; settle a conservative bound on success.
   sa_step(o,"record_http",{requests:1000,bytes:10485760});
 }

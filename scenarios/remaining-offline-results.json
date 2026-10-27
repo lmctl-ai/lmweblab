@@ -1,0 +1,76 @@
+{
+  "mode": "synthetic",
+  "real_aws_requests": 0,
+  "scenarios": [
+    {
+      "scenario": "07-sqs-worker",
+      "mode": "synthetic",
+      "elapsed_ms": {
+        "up": 2510,
+        "test": 993,
+        "down": 675,
+        "all": 4888
+      },
+      "simulated_leftovers": 0,
+      "repeat_down_passed": true,
+      "gallery_pngs": 2,
+      "estimated_cost_usd": "0.0000"
+    },
+    {
+      "scenario": "08-session-login-demo",
+      "mode": "synthetic",
+      "elapsed_ms": {
+        "up": 1439,
+        "test": 1013,
+        "down": 772,
+        "all": 3845
+      },
+      "simulated_leftovers": 0,
+      "repeat_down_passed": true,
+      "gallery_pngs": 2,
+      "estimated_cost_usd": "0.0000"
+    },
+    {
+      "scenario": "09-url-shortener",
+      "mode": "synthetic",
+      "elapsed_ms": {
+        "up": 1754,
+        "test": 1290,
+        "down": 1049,
+        "all": 4814
+      },
+      "simulated_leftovers": 0,
+      "repeat_down_passed": true,
+      "gallery_pngs": 2,
+      "estimated_cost_usd": "0.0000"
+    },
+    {
+      "scenario": "10-presigned-upload-gallery",
+      "mode": "synthetic",
+      "elapsed_ms": {
+        "up": 4237,
+        "test": 1530,
+        "down": 1422,
+        "all": 8324
+      },
+      "simulated_leftovers": 0,
+      "repeat_down_passed": true,
+      "gallery_pngs": 2,
+      "estimated_cost_usd": "0.0000"
+    },
+    {
+      "scenario": "12-maintenance-page-failover",
+      "mode": "synthetic",
+      "elapsed_ms": {
+        "up": 3717,
+        "test": 2576,
+        "down": 722,
+        "all": 7723
+      },
+      "simulated_leftovers": 0,
+      "repeat_down_passed": true,
+      "gallery_pngs": 2,
+      "estimated_cost_usd": "0.0000"
+    }
+  ]
+}

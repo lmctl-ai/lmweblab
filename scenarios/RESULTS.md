@@ -52,3 +52,16 @@ All live runs below were executed using **`AWS_PROFILE=lmaws`** only in `us-east
 The live run sampled **18 static / 2 dynamic**, **5 / 15**, and **0 / 20**. Load p95 was **221.47 ms**. Each sample result carries matching private run and live-mode fields. The complete campaign, including a cleaned failed readiness attempt, is conservatively estimated at **$0.00601854**, with zero active leftovers in both namespaces. Successful HTTP accounting charges the admitted 1000-request/10-MiB bound; no AWS invoice claim is made. [Sanitized numeric evidence](lmaws-results.json) contains no provider identifiers.
 
 New source APIs have actual SDK loopback transport tests for Lambda/EventBridge/TTL/items/S3 notifications and CloudFront origin configuration. The persistent serverless driver rejects live endpoints until explicit role/PassRole authorization. No live Lambda, DynamoDB guestbook or EventBridge success is implied by offline tests. All live AWS interactions used profile `lmaws`; no AWS CLI, admin profile or permission changes were used.
+
+
+## Remaining lmaws scenarios — synthetic verification only
+
+| Scenario | Offline result | Cleanup proof | Live state |
+|---|---|---|---|
+| [07 SQS worker](07-sqs-worker/lmaws/README.md) | Enqueue → deferred worker → conditional DynamoDB receipt; poison redrive after three receives | Repeat down; independent simulated queues/mapping/functions/logs/table audit: 0 | Pending Lead go and event-source mapping grant |
+| [08 login](08-session-login-demo/lmaws/README.md) | Form asset, fail-closed credentials, random cookie, authenticated read, logical TTL expiry and logout | Repeat down; independent simulated audit: 0 | Pending Lead go |
+| [09 shortener](09-url-shortener/lmaws/README.md) | Conditional create/409, 301/302, unknown 404, atomic counter; Decimal output regression fixed | Repeat down; independent simulated audit: 0 | Pending Lead go |
+| [10 uploads](10-presigned-upload-gallery/lmaws/README.md) | Presign → PUT → exact-byte fetch; wrong type/length, oversize and expired grant rejected; separate host SDK SigV4 test | Repeat down; independent simulated audit: 0 | Pending Lead go; live CloudFront propagation unmeasured |
+| [12 maintenance](12-maintenance-page-failover/lmaws/README.md) | Three all-or-nothing DNS targets persisted; lmcurl origin/cutover fixtures and picture report | Repeat down; independent simulated audit: 0 | Pending Lead go; not automatic health-check failover |
+
+Gate: `scenarios/test-remaining-lmaws.sh`, including four handler unit regressions and live HTTP driver compilation/execution against loopback for 07–09. All new runs cost `$0.0000` offline. The [numeric synthetic receipts](remaining-offline-results.json) record elapsed times, two pictures per scenario and zero simulated leftovers; they contain no real provider data. The lmaws full local gate also passes real SDK loopback mapping/redrive, conditional-write and SigV4 header tests. No real subscription/account interaction, live timings, billing measurements or live zero-leftover claims were added. Existing live results above remain separate.

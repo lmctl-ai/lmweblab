@@ -173,3 +173,10 @@ Physical `.lms` lines in each engine directory (including report scripts; inline
 | 11 | 101 | 781 |
 
 The lmaws engine additionally shares `scenarios/lib/lmaws.lms` (227 lines), root HTTP contracts and Python fixture adapters. The lmcloud engine shares `scenarios/lib/common.lms` and provider configuration. Static-only lmaws prepares ACM even for HTTP, so the live resource graphs differ from the no-ACM lmcloud HTTP variant; timings are not controlled benchmarks.
+
+
+## Remaining lmaws scenarios 07–10 and 12
+
+The lmaws engine now has complete offline lifecycles, deployed-handler loopback HTTP assertions and two pictures per scenario. Queue completion/DLQ, login/expiry/logout, conditional short-code creation and hit counters, two-phase uploads and signed bounds, and all-or-nothing manual DNS cutover are tested. The main-source lmaws schema has 194 host signature lines including its context. A current source build is required until a release includes the additions.
+
+No new lmcloud files were changed. No live comparison, performance or cost parity is claimed. Scenario 12 reuses weighted records at 0/100 → 100/0 → 0/100; it demonstrates manual cutover without paid health checks. Its probe resolves DNS and identifies backend content using an explicit Host override, so browser TLS failover remains a separate acceptance question. [IAM actions and v6 gaps](IAM_REMAINING.md) were reviewed offline; scenario 07 needs a mapping-specific grant before any authorized live run.

@@ -1,0 +1,26 @@
+# === CONFIG ===
+let TITLE = "Scenario 12: maintenance cutover and recovery (lmaws)";
+let STATIC_LABEL = "CloudFront / OAC / S3";
+let DYNAMIC_LABEL = "Spot nano / Python API";
+# === END CONFIG ===
+mkdir("images");mkdir(".lmweblab-local");
+let draw=_dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
+scene.canvas(1000,420,"#0f172a");
+scene.text(32.0,42.0,24.0,${TITLE},"#f8fafc");
+scene.text(32.0,74.0,14.0,"Synthetic architecture / weights app 100% -> maintenance 100% -> app 100%","#94a3b8");
+let dns=scene.box(200.0,210.0,260.0,100.0,"Route 53 weighted A\nOne run-scoped name","#1e293b","#38bdf8",10.0,16.0);
+let site=scene.box(675.0,145.0,320.0,76.0,${STATIC_LABEL},"#1e293b","#818cf8",10.0,16.0);
+let app=scene.box(675.0,290.0,320.0,76.0,${DYNAMIC_LABEL},"#1e293b","#34d399",10.0,16.0);
+scene.connector(dns,"e",site,"w","elbow","none","arrow","none","#818cf8",2.0,"Static weight",0.5,0.0,-14.0);
+scene.connector(dns,"e",app,"w","elbow","none","arrow","none","#34d399",2.0,"Dynamic weight",0.5,0.0,14.0);
+scene.text(32.0,375.0,14.0,"lmcurl DoH + unique ECS subnet -> explicit resolve -> binomial check -> owned teardown","#cbd5e1");
+scene.render_png("images/architecture.png",1000,420,1);
+end _dsl_
+savedsl(draw,".lmweblab-local/draw.dslb");let r=system(concat(dsl_cli(draw),["--dsl",".lmweblab-local/draw.dslb"]),120000);assert(r.code==0);
+write_file(".lmweblab-local/synthetic.dat","app 0 100\nmaintenance 100 0\nrecovery 0 100\n");
+let plot=_dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
+plot.png("images/results.png",900,440);
+plot.cmd("set title 'Synthetic fixture targets (not live measurements)'; set ylabel 'share (%)'; set yrange [0:125]; set grid ytics; set key top right; set style data histograms; set style histogram cluster gap 1; set style fill solid 0.8; set boxwidth 0.7");
+plot.cmd("plot '.lmweblab-local/synthetic.dat' using 2:xtic(1) title 'Static' lc rgb '#818cf8', '' using 3 title 'Dynamic' lc rgb '#34d399'");plot.close();
+end _dsl_
+savedsl(plot,".lmweblab-local/plot.dslb");r=system(concat(dsl_cli(plot),["--dsl",".lmweblab-local/plot.dslb"]),120000);assert(r.code==0);

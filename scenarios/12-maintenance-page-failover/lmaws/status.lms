@@ -1,0 +1,16 @@
+# === CONFIG: edit these scalar settings; no list splices required ===
+let REGION = getenv("AWS_REGION", "us-east-1");
+let DOMAIN = getenv("LMWEBLAB_DOMAIN", "example.com");
+let NAME_PREFIX = "lmaws";
+let INSTANCE_TYPE = "t4g.nano";
+let REQUEST_TIMEOUT_MS = 10000;
+let SAMPLES_PER_STEP = 20;
+let FIRST_STATIC_WEIGHT = 0;
+let MIDDLE_STATIC_WEIGHT = 100;
+let FINAL_STATIC_WEIGHT = 0;
+let COST_CAP_USD = "0.10";
+let ENABLE_HTTPS = getenv("LMWEBLAB_ACM", "0") == "1";
+# === END CONFIG ===
+import "../../lib/lmaws.lms";
+assert((!contains(ARGV,"--live")&&getenv("LMWEBLAB_LIVE","0")!="1")||getenv("LMWEBLAB_REMAINING_LIVE_GO","")=="1"||contains(["down","status"],"status"),"Live cutover awaits the Lead go");
+scenario_run("12", "status", {region:REGION, domain:DOMAIN, prefix:NAME_PREFIX, site_dir:"assets/site", instance_type:INSTANCE_TYPE, timeout:REQUEST_TIMEOUT_MS, samples:SAMPLES_PER_STEP, first_weight:FIRST_STATIC_WEIGHT, middle_weight:MIDDLE_STATIC_WEIGHT, final_weight:FINAL_STATIC_WEIGHT, cap:COST_CAP_USD, https:ENABLE_HTTPS}, ARGV);
