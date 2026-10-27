@@ -84,7 +84,7 @@ end _dsl_
   }
   let program=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
 let cloud=aws.region(${o.region});if(${!o.live}){cloud=cloud.demo();}check(cloud.is_demo()==${!o.live});
-let run=cloud.serverless_stack(${o.run_id},${o.domain},${path});let removed=run.down();check(run.leftovers().len()==0);
+let run=cloud.serverless_stack(${o.run_id},${o.domain},${path});let removed=run.down();let settled=run.settle(900);check(run.leftovers().len()==0);
 file_write(".lmweblab-local/down.json",removed.json());
 end _dsl_
   let serverless_result=sv_dispatch(program,o,"down",1800000);

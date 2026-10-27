@@ -1,15 +1,30 @@
 ![Scenario 04 architecture](images/s04_lmaws_architecture.png)
 
-`lmctl all.lms`
+`lmctl all.lms --offline`
+
+# DynamoDB guestbook: lmaws engine
+
+Live verified using **AWS_PROFILE=lmaws** only. Use a current source-built lmaws containing custom logging and `Serverless.settle`; older release binaries may predate these additions. Run from this directory.
+
+```sh
+# Set AWS_PROFILE=lmaws, AWS_REGION=us-east-1 and a fresh hexadecimal LMWEBLAB_RUN_ID.
+# Set LMWEBLAB_DOMAIN for scenarios 03 and 05 to the authorized zone.
+lmctl all.lms --live
+# Inspect individual phases when needed:
+lmctl status.lms --live
+lmctl down.lms --live
+# Offline pictures and handler contracts:
+lmctl all.lms --offline
+```
+
+All five entry points start with editable CONFIG settings: region/domain, slug, runtime/handler/source, memory, timeout, TTL, schedule, HTTP timeout, load count/window, p95 limit and cost cap. Defaults are python3.12, 128 MiB, 10 seconds, sixteen load requests over at most five seconds, and a $0.05 component cap. The paired web budget remains below the run ceiling. Names and the pre-created role are constrained to the lmaws sandbox.
+
+Measured up/test/cleanup plus checks: **32.3 / 3.8 / 74.0 seconds**. First cold/warm HTTP: **1142.2 / 234.0 ms**; load p95 **1058.8 ms**. Running this example costs about **$0.00315286** under the conservative admitted-bound model; offline charge $0.00. See [results and recovery details](../../RESULTS.md).
+
+Functions use `lmaws_<slug>_logs_<run>`, created/tagged before deployment and deleted after the function. The default log group is never used. AWS log delivery may be delayed; down includes bounded post-delivery settlement, which can add up to ten minutes when run immediately. Exact private creation receipts restrict any late empty-tag repair. Raw state, endpoints, logs, metrics and cost ledgers remain in ignored `.lmweblab-local/`. The role and IAM policy are never modified.
 
 ![Latency report](images/s04_lmaws_latency.png)
-`lmctl test.lms`
 
-Offline fake transport checks a public, explicitly justified Function URL backed by a tagged on-demand DynamoDB table with TTL and cursor-friendly access. The lmcurl test covers POST/GET, bounded pagination, JSON shape and escaping. Live execution uses the pre-created `lmaws_lambda_exec` role and never edits it.
+`lmctl all.lms --offline`
 
-Defaults: `us-east-1`, names `lmaws_s04_*`, 128 MiB/10 s, TTL 3600 s, `$0.0000` offline and about `$0.0002` live. Run `lmctl up.lms`, `lmctl test.lms`, `lmctl down.lms` from this directory.
-
-
-Live lifecycle (from this directory): set `AWS_PROFILE=lmaws`, `AWS_REGION=us-east-1`, a fresh hexadecimal `LMWEBLAB_RUN_ID`, and `LMWEBLAB_DOMAIN` for the authorized DNS zone. Run `lmctl all.lms --live`; use separate `up.lms`, `test.lms`, `status.lms`, `down.lms` commands when inspecting a phase. The driver attempts teardown on failure. All run state, logs, raw metrics and cost receipts stay under ignored `.lmweblab-local/`.
-
-Every function sends logs to `lmaws_<slug>_logs_<run>`, created with the run tag and deleted during teardown. The default `/aws/lambda/` group is never used. Configured memory and timeout, admitted HTTP bounds, SDK requests and scheduled executions contribute to the conservative cost estimate. An action denial stops the scenario; no admin profile or permission-file edits are allowed. Final measured results are recorded in [../../RESULTS.md](../../RESULTS.md).
+Committed pictures use synthetic fixtures. Final provider-backed audit found **zero leftovers** after the delivery window.

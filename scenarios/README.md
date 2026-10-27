@@ -34,9 +34,11 @@ The [`lmaws/` implementations](../lmaws/README.md) also have independent scenari
 
 - [01 static site](01-static-site-s3-cloudfront/lmaws/README.md)
 - [02 dynamic nano](02-dynamic-page-spot-nano/lmaws/README.md)
-- [03 Lambda hello](03-lambda-function-url-hello/lmaws/README.md), [04 guestbook](04-lambda-dynamodb-guestbook/lmaws/README.md), [05 static + API](05-static-plus-api/lmaws/README.md), [06 scheduled report](06-scheduled-report/lmaws/README.md): offline only pending authorization.
+- [03 Lambda hello](03-lambda-function-url-hello/lmaws/README.md), [04 guestbook](04-lambda-dynamodb-guestbook/lmaws/README.md), [05 static + API](05-static-plus-api/lmaws/README.md), [06 scheduled report](06-scheduled-report/lmaws/README.md): live verified with custom logs, real scheduling, per-phase metrics and zero final leftovers; [structured results](lmaws-lambda-results.json).
 - [11 weighted DNS](11-weighted-dns-two-backends/lmaws/README.md)
 
 Run each from its engine directory: `lmctl all.lms --offline`. Live commands require `AWS_PROFILE=lmaws` and an authorized `LMWEBLAB_DOMAIN`; every run keeps its own ignored state. New weighted/Lambda APIs require the current lmaws source build on PATH until a release includes them. The original combined-stack entry points remain available.
 
 Remaining lmaws implementations: [07 worker](07-sqs-worker/lmaws/README.md), [08 login](08-session-login-demo/lmaws/README.md), [09 shortener](09-url-shortener/lmaws/README.md), [10 uploads](10-presigned-upload-gallery/lmaws/README.md), [12 maintenance](12-maintenance-page-failover/lmaws/README.md). Run `scenarios/test-remaining-lmaws.sh` with a current lmaws source build on PATH. All new evidence is synthetic; see [IAM handoff](IAM_REMAINING.md).
+
+The lmaws Lambda campaign used profile lmaws only and left zero resources across all five attempts after post-delivery settlement. Its conservative total estimate was $0.01723215. Down may wait for delayed log delivery; current source must include Serverless.settle.

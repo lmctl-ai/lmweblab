@@ -149,7 +149,7 @@ Scenarios 01 and 02 split the original native-host stack into independent deploy
 | Later drift | Owned targets must match before shift or delete | Refresh/plan exposes drift |
 | Nano placement | Bounded subnet/type capacity fallback with distinct idempotency tokens | Provider launch and existing guarded teardown fallback |
 | Cost | Durable price-table estimate; admitted HTTP upper bound retained on interruption | Documented price-table estimate |
-| Lambda 03–06 | Offline only until the Lead authorizes live role/PassRole testing | Offline only until the same authorization |
+| Lambda 03–06 | Live verified with lmaws only, custom logs and post-delivery audit | Live results recorded separately above |
 
 Failure modes fixed while building the lmaws engine: standalone dynamic DNS no longer requires a certificate step; weighted steps are repeatable instead of being skipped as already complete; initial records cannot be adopted; all exact-name records are included in discovery, including foreign identifiers; teardown refuses foreign records. A local PATH executable older than v0.1.16 is rejected before provider dispatch. `scenarios/test-lmaws.sh` copies fixtures without private state to avoid replaying an already-destroyed run.
 
@@ -166,10 +166,10 @@ Physical `.lms` lines in each engine directory (including report scripts; inline
 |---|---:|---:|
 | 01 | 101 | 574 |
 | 02 | 101 | 594 |
-| 03 | 113 | 229 |
-| 04 | 99 | 178 |
-| 05 | 104 | 178 |
-| 06 | 100 | 207 |
+| 03 | 144 | 535 |
+| 04 | 136 | 516 |
+| 05 | 136 | 533 |
+| 06 | 135 | 549 |
 | 11 | 101 | 781 |
 
 The lmaws engine additionally shares `scenarios/lib/lmaws.lms` (227 lines), root HTTP contracts and Python fixture adapters. The lmcloud engine shares `scenarios/lib/common.lms` and provider configuration. Static-only lmaws prepares ACM even for HTTP, so the live resource graphs differ from the no-ACM lmcloud HTTP variant; timings are not controlled benchmarks.
@@ -180,3 +180,27 @@ The lmaws engine additionally shares `scenarios/lib/lmaws.lms` (227 lines), root
 The lmaws engine now has complete offline lifecycles, deployed-handler loopback HTTP assertions and two pictures per scenario. Queue completion/DLQ, login/expiry/logout, conditional short-code creation and hit counters, two-phase uploads and signed bounds, and all-or-nothing manual DNS cutover are tested. The main-source lmaws schema has 194 host signature lines including its context. A current source build is required until a release includes the additions.
 
 No new lmcloud files were changed. No live comparison, performance or cost parity is claimed. Scenario 12 reuses weighted records at 0/100 → 100/0 → 0/100; it demonstrates manual cutover without paid health checks. Its probe resolves DNS and identifies backend content using an explicit Host override, so browser TLS failover remains a separate acceptance question. [IAM actions and v6 gaps](IAM_REMAINING.md) were reviewed offline; scenario 07 needs a mapping-specific grant before any authorized live run.
+
+
+## Current lmaws Lambda engine comparison
+
+| Scenario | Up / test / cleanup + checks (s) | Cold / warm HTTP (ms) | p95 (ms) | Conservative estimate | Leftovers |
+|---|---:|---:|---:|---:|---:|
+| 03 | 297.4 / 5.3 / 397.8 | 422.5 / 224.9 | 285.0 | $0.00348786 | **0** |
+| 04 | 32.3 / 3.8 / 74.0 | 1142.2 / 234.0 | 1058.8 | $0.00315286 | **0** |
+| 05 | 269.8 / 2.8 / 310.1 | 437.1 / 248.8 | 340.6 | $0.00349226 | **0** |
+| 06 | 36.2 / 103.6 / 58.9 | 1480.4 / 297.5 | 1151.2 | $0.00378932 | **0** |
+
+The existing lmcloud measurements above are the other coder's provider-backed runs. The engines use different wait/poll strategies and sampling points; timings are observations, not controlled performance rankings. Cost models also differ: the native ledger deliberately charges admitted worst-case Lambda/log/HTTP bounds, whereas the lmcloud table uses small fixed price-table estimates. Do not interpret that difference as a billing efficiency comparison.
+
+| Issue | lmaws engine | lmcloud / OpenTofu engine |
+|---|---|---|
+| Execution role | Exact pre-created short name, STS account resolution and bounded Active waiter | Provider role ARN and Lambda lifecycle graph |
+| Public Function URL | Both URL-only invoke permissions added by host | Two explicit permission resources required with the pinned provider |
+| Logging | Pre-created/tagged custom group; create request includes LoggingConfig | Explicit aws_cloudwatch_log_group plus logging_config |
+| Teardown after final log delivery | Private receipt, time window, absent-function check and bounded settlement; caught a group recreated minutes later | Provider graph/state is useful, but an immediate state-empty result alone cannot rule out late log delivery |
+| Failure diagnostics | Private provider causes, phase exits, pre-assert load metrics and fresh inventory | Plan/apply/destroy diagnostics and provider waiters |
+| Cold load boundary | One-second window failed a boto3 concurrency trial; five seconds completed all sixteen requests with no errors | Provider provisioning is separate from HTTP/load script duration |
+| Scheduled reports | Only aws.events generates; HTTP reads do not increment; persisted counter and S3/DDB readback checked | See the committed lmcloud scenario implementation and measurements above |
+
+Native changes landed in lmaws: custom logging, Active wait, URL deletion, independent serverless inventory, persistent cumulative caps and snapshots, receipt-scoped late-log reconciliation, and a 10-minute post-delivery settlement check. The policy builder now retains the exact Lambda-only PassRole statement from v6. No IAM policy, profile or role was changed by this campaign. LMScript 0.2.426 still uses uppercase let; no compiler change or list splice was needed. lmcurl required a caller-side load-window correction, not a host change.

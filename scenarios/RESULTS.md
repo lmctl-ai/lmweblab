@@ -44,14 +44,14 @@ All live runs below were executed using **`AWS_PROFILE=lmaws`** only in `us-east
 | 01 static site | Independent offline lifecycle; static contracts also passed as the static component of live 11 | See 11 for combined live timing | Included in 11 | 0 |
 | 02 dynamic nano | Independent offline lifecycle; dynamic contracts and load also passed in live 11 | See 11 for combined live timing | Included in 11 | 0 |
 | 11 weighted DNS | Live: 90/10 → 50/50 → 0/100, DoH/ECS sampling, all shared HTTP contracts | **335.062 / 126.615 / 496.019 s** | **$0.00312048** successful run | **0** |
-| 03 Lambda hello | Offline persistent lifecycle + real loopback handler HTTP/JSON and first/warm fixture calls | Fake only; no live timing | $0.00 offline | 0 simulated receipts |
-| 04 guestbook | Offline lifecycle, POST/GET, escaping, cursor pagination, TTL field, bounded bodies, p95 | Fake only; no live timing | $0.00 offline | 0 simulated receipts |
-| 05 static + API | Offline S3/Lambda origin wiring, `/` + `/api/*` handler routing and cache rules | Fake only; no live timing | $0.00 offline | 0 simulated receipts |
-| 06 scheduled report | Offline rule wiring, repeated fixture invocations, cold-start-persistent counter and S3 JSON/HTML writes | Fake only; no real EventBridge schedule observed | $0.00 offline | 0 simulated receipts |
+| 03 Lambda hello | **LIVE verified**, including custom logs; see current campaign below | See live table | $0.00348786 | **0** |
+| 04 guestbook | **LIVE verified**, including custom logs; see current campaign below | See live table | $0.00315286 | **0** |
+| 05 static + API | **LIVE verified**, including custom logs; see current campaign below | See live table | $0.00349226 | **0** |
+| 06 scheduled report | **LIVE verified**, including custom logs; see current campaign below | See live table | $0.00378932 | **0** |
 
 The live run sampled **18 static / 2 dynamic**, **5 / 15**, and **0 / 20**. Load p95 was **221.47 ms**. Each sample result carries matching private run and live-mode fields. The complete campaign, including a cleaned failed readiness attempt, is conservatively estimated at **$0.00601854**, with zero active leftovers in both namespaces. Successful HTTP accounting charges the admitted 1000-request/10-MiB bound; no AWS invoice claim is made. [Sanitized numeric evidence](lmaws-results.json) contains no provider identifiers.
 
-New source APIs have actual SDK loopback transport tests for Lambda/EventBridge/TTL/items/S3 notifications and CloudFront origin configuration. The persistent serverless driver rejects live endpoints until explicit role/PassRole authorization. No live Lambda, DynamoDB guestbook or EventBridge success is implied by offline tests. All live AWS interactions used profile `lmaws`; no AWS CLI, admin profile or permission changes were used.
+New source APIs have actual SDK loopback transport tests for Lambda/EventBridge/TTL/items/S3 notifications and CloudFront origin configuration. The role/PassRole grant is now active; the live Lambda campaign below is separate from offline fixture evidence. All live AWS interactions used profile `lmaws`; no AWS CLI, admin profile or permission changes were used.
 
 
 ## Remaining lmaws scenarios — synthetic verification only
@@ -65,3 +65,23 @@ New source APIs have actual SDK loopback transport tests for Lambda/EventBridge/
 | [12 maintenance](12-maintenance-page-failover/lmaws/README.md) | Three all-or-nothing DNS targets persisted; lmcurl origin/cutover fixtures and picture report | Repeat down; independent simulated audit: 0 | Pending Lead go; not automatic health-check failover |
 
 Gate: `scenarios/test-remaining-lmaws.sh`, including four handler unit regressions and live HTTP driver compilation/execution against loopback for 07–09. All new runs cost `$0.0000` offline. The [numeric synthetic receipts](remaining-offline-results.json) record elapsed times, two pictures per scenario and zero simulated leftovers; they contain no real provider data. The lmaws full local gate also passes real SDK loopback mapping/redrive, conditional-write and SigV4 header tests. No real subscription/account interaction, live timings, billing measurements or live zero-leftover claims were added. Existing live results above remain separate.
+
+
+## Current lmaws Lambda live campaign (session v6, boundary v2)
+
+| Scenario | Up / test / cleanup + checks (s) | Cold / warm HTTP (ms) | p95 (ms) | Conservative estimate | Leftovers |
+|---|---:|---:|---:|---:|---:|
+| 03 | 297.4 / 5.3 / 397.8 | 422.5 / 224.9 | 285.0 | $0.00348786 | **0** |
+| 04 | 32.3 / 3.8 / 74.0 | 1142.2 / 234.0 | 1058.8 | $0.00315286 | **0** |
+| 05 | 269.8 / 2.8 / 310.1 | 437.1 / 248.8 | 340.6 | $0.00349226 | **0** |
+| 06 | 36.2 / 103.6 / 58.9 | 1480.4 / 297.5 | 1151.2 | $0.00378932 | **0** |
+
+[Sanitized structured evidence](lmaws-lambda-results.json). Scenario 06 observed two actual scheduled reports, four DynamoDB items (counter, latest, and two report rows), and both S3 artifacts.
+
+Cold/warm timings are end-to-end Function URL responses on a fresh function, with the handler's cold-start indicator checked. Scenario 06 initially returns 404 because no scheduled report exists; those reads do not generate a report. Load uses four virtual users, sixteen requests, a five-second bounded window and a 2,000-ms p95 threshold.
+
+Cleanup includes follow-up recovery/audit and post-delivery checks. Scenario 03's primary cleanup time is derived from the original command wall time minus up/test and includes orchestration overhead. Its first native cleanup pass failed before emergency cleanup completed; the original cause was not retained by that build. Scenario 04 required a fresh run after the one-second load window cut off concurrent cold starts; its successful run then exposed late untagged log-group recreation. These failures and their costs remain in the numeric evidence; the initial all-command exit codes are not rewritten as zero.
+
+AWS can deliver Lambda logs 5–10 minutes after invocation. The final check ran after that window and found zero resources in all five attempt namespaces, including zero default `/aws/lambda/` groups. New `down` commands include bounded settlement. Only an exact group backed by the private run's creation receipt, provider creation timestamp and an absent function can have an empty tag set repaired; foreign-tagged, pre-existing or out-of-window groups are refused. IAM and the pre-created execution role were untouched. [AWS log-delivery guidance](https://docs.aws.amazon.com/lambda/latest/dg/monitoring-cloudwatchlogs.html).
+
+Campaign estimate: **$0.01723215**, including the failed load-window attempt, SDK request journals and recovery checks. The model reserves 100 HTTP requests/2 MiB, the configured Lambda memory/timeout, 16 KiB of logs per request, and 20 scheduled invocations. It ignores free-tier deductions and is a conservative estimate, not an invoice. [Lambda pricing](https://aws.amazon.com/lambda/pricing/), [CloudWatch pricing](https://aws.amazon.com/cloudwatch/pricing/). Public pictures stay synthetic; raw live responses and identifiers remain ignored/private.
