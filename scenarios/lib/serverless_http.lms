@@ -10,6 +10,7 @@ fn sl_exec(program, o, name, timeout_ms) {
   savedsl(program, bytecode);
   let command = concat(dsl_cli(program), ["--dsl", bytecode]);
   let result = system(command, timeout_ms);
+  write_file(".lmweblab-local/serverless-http-" + get(o, "run_id", "run") + "-" + name + ".log", result.stdout + "\n" + result.stderr);
   assert(result.code == 0, "lmcurl contract failed; inspect private " + name + ".log");
   return result;
 }
@@ -27,7 +28,9 @@ let first = s.get("/").proxy("").timeout(timeout_ms).retry(5, 1000).send();
 let warm = s.get("/").proxy("").timeout(timeout_ms).retry(5, 1000).send();
 assert(first.status() >= 200 && first.status() < 500);
 assert(warm.status() >= 200 && warm.status() < 500);
-file_write(${output}, "{\"first_status\":" + str(first.status()) + ",\"warm_status\":" + str(warm.status()) + ",\"first_ms\":" + str(first.time("total")) + ",\"warm_ms\":" + str(warm.time("total")) + ",\"first_cold\":\"" + first.json("$.cold_start").value() + "\",\"warm_cold\":\"" + warm.json("$.cold_start").value() + "\"}\n");
+let cold_first = "";let cold_warm = "";
+if (${get(o, "number", "") } == "03") { cold_first = first.json("$.cold_start").value();cold_warm = warm.json("$.cold_start").value(); }
+file_write(${output}, "{\"first_status\":" + str(first.status()) + ",\"warm_status\":" + str(warm.status()) + ",\"first_ms\":" + str(first.time("total")) + ",\"warm_ms\":" + str(warm.time("total")) + ",\"first_cold\":\"" + cold_first + "\",\"warm_cold\":\"" + cold_warm + "\"}\n");
 end _dsl_
   sl_exec(p, o, "first-warm", 180000);
   return json_parse(read_file(output));
@@ -70,10 +73,16 @@ if (${number} == "03") {
 } else if (${number} == "05") {
   assert(cf_url != "");let page = curl.session(cf_url).get("/").proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(page.status(),200);
   let api = curl.session(cf_url).get("/api/info?probe=live").proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(api.status(),200);assert(api.assert_json_schema("{\"type\":\"object\",\"required\":[\"ok\",\"path\",\"query\"]}"));assert_eq(api.json("$.path").value(),"/api/info");assert(api.header("cache-control") != "");
+  let alias = curl.session(site_url).get("/").proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(alias.status(),200);
+  assert(api.header("cache-control") == "no-store");assert(api.header("access-control-allow-origin") == "");
+  assert(str_contains(api.body(), "probe"));
   let load = curl.load(s.get("/api/info").proxy(""), 4, 1.0, samples);assert_eq(load.threshold(p95_limit, 0.0), true);metrics = metrics + ",\"p95_ms\":" + str(load.p95_ms());
 } else if (${number} == "06") {
   let report = s.get("/report.json").proxy("").timeout(timeout_ms).retry(5,1000).send();assert(report.status() == 200 || report.status() == 404);
   if (report.status() == 200) { assert(report.assert_json_schema("{\"type\":\"object\",\"required\":[\"ok\",\"scheduled_runs\",\"latest_iso\"]}")); }
+  let checks = 0;let previous = -1;
+  while (checks < 8 && previous < 2) { let current = s.get("/report.json").proxy("").timeout(timeout_ms).retry(5,1000).send();if (current.status() == 200) { previous = current.json("$.scheduled_runs").to_int(); } if (previous < 2) { checks = checks + 1; } }
+  assert(previous >= 2);let unchanged = s.get("/report.json").proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(unchanged.json("$.scheduled_runs").to_int(), previous);
 }
 metrics = metrics + "}\n";file_write(${output}, metrics);
 end _dsl_
