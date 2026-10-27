@@ -1,5 +1,5 @@
-assert(file_exists(".lmweblab-local/state.json")); let st=json_parse(read_file(".lmweblab-local/state.json"));
+assert(file_exists(".lmweblab-local/state.json")); remove_file(".lmweblab-local/down-run.json"); let st=json_parse(read_file(".lmweblab-local/state.json"));
 let p=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
-let cloud=aws.demo(); let fn=cloud.lambda_function(${get(st,"name","")},"lmaws_lambda_exec","python3.12","guestbook.handler","def handler(event, context): return {'statusCode':200}",128,10); let gone=fn.delete(); let run=cloud.run(${get(st,"run_id","")},".lmweblab-local/run.json"); run.cleanup(); file_write(".lmweblab-local/down.json",gone.json());
+let cloud=aws.demo(); let lambda=cloud.lambda_function(${get(st,"name","")},"lmaws_lambda_exec","python3.12","guestbook.handler","def handler(event, context): return {'statusCode':200}",128,10); let gone=lambda.delete(); let run=cloud.run(${get(st,"run_id","")},".lmweblab-local/down-run.json"); run.cleanup(); file_write(".lmweblab-local/down.json",gone.json());
 end _dsl_
 savedsl(p,".lmweblab-local/down.dslb"); assert(system(concat(dsl_cli(p),["--dry-run","--dsl",".lmweblab-local/down.dslb"]),120000).code==0); println("PASS scenario 04 down; leftovers=0"); println("estimated cost: $0.0000");

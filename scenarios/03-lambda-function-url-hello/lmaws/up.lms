@@ -14,10 +14,10 @@ let name = NAME_PREFIX + "_" + SCENARIO_SLUG + "_" + run_id;
 let code = "def handler(event, context): return {'statusCode':200,'headers':{'content-type':'application/json'},'body':'{\\\"ok\\\":true,\\\"name\\\":\\\"" + name + "\\\"}'}";
 let p = _dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
 let cloud = aws.demo();
-let fn = cloud.lambda_function(${name}, ${ROLE}, ${RUNTIME}, "handler.handler", ${code}, ${MEMORY_MB}, ${TIMEOUT_S});
-let endpoint = fn.url("Scenario 03 demo Function URL is intentionally public for an offline API test");
-file_write(${state_dir + "/state.json"}, json_stringify({scenario:"03",run_id:${run_id},name:${name},endpoint:endpoint,role:${ROLE},memory_mb:${MEMORY_MB},timeout_s:${TIMEOUT_S}}));
-file_write(${state_dir + "/up.json"}, fn.status().json());
+let lambda = cloud.lambda_function(${name}, ${ROLE}, ${RUNTIME}, "handler.handler", ${code}, ${MEMORY_MB}, ${TIMEOUT_S});
+let endpoint = lambda.url("Scenario 03 demo Function URL is intentionally public for an offline API test");
+file_write(${state_dir + "/state.json"}, "{\"scenario\":\"03\",\"run_id\":\"" + ${run_id} + "\",\"name\":\"" + ${name} + "\",\"endpoint\":\"" + endpoint + "\",\"role\":\"" + ${ROLE} + "\"}");
+file_write(${state_dir + "/up.json"}, lambda.status().json());
 end _dsl_
 savedsl(p, state_dir + "/up.dslb");
 let r = system(concat(dsl_cli(p), ["--dry-run", "--dsl", state_dir + "/up.dslb"]), 120000);
