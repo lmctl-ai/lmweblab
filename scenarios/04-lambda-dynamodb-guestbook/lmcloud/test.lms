@@ -1,10 +1,27 @@
 # === CONFIG ===
 let NAME_PREFIX = "lmaws";
 let SCENARIO_SLUG = "s04";
-let TABLE_BILLING = "PAY_PER_REQUEST";
 let TTL_SECONDS = 3600;
-let REQUEST_TIMEOUT_MS = 5000;
+let TABLE_BILLING = "PAY_PER_REQUEST";
+let REQUEST_TIMEOUT_MS = 10000;
+let LOAD_VUS = 4;
+let LOAD_DURATION_S = "3.0";
+let LOAD_REQUESTS = 16;
+let P95_THRESHOLD_MS = "5000.0";
+let LIVE_MODE = getenv("LMWEBLAB_LIVE", "0") == "1";
+let DEFAULT_RUN_ID = getenv("LMWEBLAB_RUN_ID", "") != "" ? getenv("LMWEBLAB_RUN_ID", "") : "demo01";
 # === END CONFIG ===
+
+let live = LIVE_MODE;
+let run_id = DEFAULT_RUN_ID;
+let i = 0;
+while (i < len(ARGV)) {
+  let a = ARGV[i];
+  if (a == "--live") { live = true; }
+  else if (a == "--offline" || a == "--dry-run") { live = false; }
+  else if (a == "--run-id" && i + 1 < len(ARGV)) { i = i + 1; run_id = ARGV[i]; }
+  i = i + 1;
+}
 
 let stack_dir = file_exists("main.tf") ? "." : "scenarios/04-lambda-dynamodb-guestbook/lmcloud";
 let state_dir = path_join(stack_dir, ".lmweblab-local");
@@ -12,48 +29,155 @@ mkdir(state_dir);
 mkdir("images");
 mkdir("data");
 
+let fn_url = "";
+let meta_path = path_join(state_dir, "stack.json");
+if (file_exists(meta_path)) {
+  let meta = json_parse(read_file(meta_path));
+  fn_url = str(get(meta, "function_url", ""));
+  if (run_id == "demo01") { run_id = str(get(meta, "run_id", run_id)); }
+  if (get(meta, "mode", "offline") == "live") { live = true; }
+}
+
 let csv_path = "data/s04_lmcloud_latency.csv";
 let arch_img = "images/s04_lmcloud_architecture.png";
 let plot_img = "images/s04_lmcloud_latency.png";
+let summary_path = path_join(state_dir, "test-summary.json");
 let t0 = now();
 
-let p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
-let m = curl.mock();
-let base = m.url();
-let s = curl.session(base);
-let timeout_ms = ${REQUEST_TIMEOUT_MS};
-let out_csv = ${csv_path};
+if (!live) {
+  let p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+  let m = curl.mock();
+  let base = m.url();
+  let s = curl.session(base);
+  let timeout_ms = ${REQUEST_TIMEOUT_MS};
+  let out_csv = ${csv_path};
 
-let r_post = s.post("/echo").proxy("").json("{\"author\":\"alice\",\"message\":\"hello\"}").timeout(timeout_ms).send();
-assert_eq(r_post.status(), 200);
-assert_eq(r_post.json("$.json.author").value(), "alice");
+  let r_post1 = s.post("/echo").json("{\"author\":\"Alice\",\"message\":\"Hello <script>alert(1)</script>\"}").proxy("").timeout(timeout_ms).send();
+  let r_post2 = s.post("/echo").json("{\"author\":\"Bob\",\"message\":\"Second entry\"}").proxy("").timeout(timeout_ms).send();
+  let r_page1 = s.get("/json?limit=1&offset=0").proxy("").timeout(timeout_ms).send();
+  let r_page2 = s.get("/json?limit=1&offset=1").proxy("").timeout(timeout_ms).send();
+  assert_eq(r_post1.status(), 200);
+  assert_eq(r_post2.status(), 200);
+  assert_eq(r_page1.status(), 200);
+  assert_eq(r_page2.status(), 200);
 
-let r_get = s.get("/json").proxy("").timeout(timeout_ms).send();
-assert_eq(r_get.status(), 200);
-
-let csv = "metric,ms\n" +
-  "post entry ms," + str(r_post.time("total")) + "\n" +
-  "list page ms," + str(r_get.time("total")) + "\n";
-file_write(out_csv, csv);
-m.stop();
+  let csv = "operation,ms\n" +
+    "POST entry 1," + str(r_post1.time("total")) + "\n" +
+    "POST entry 2," + str(r_post2.time("total")) + "\n" +
+    "GET page 1," + str(r_page1.time("total")) + "\n" +
+    "GET page 2," + str(r_page2.time("total")) + "\n";
+  file_write(out_csv, csv);
+  m.stop();
 end _dsl_
+  let dslb = path_join(state_dir, "test.dslb");
+  savedsl(p, dslb);
+  let r = system(concat(dsl_cli(p), ["--dsl", dslb]), 60000);
+  assert(r.code == 0, "scenario 04 offline test failed: " + r.stderr);
+} else {
+  assert(fn_url != "", "Live test requires function_url in .lmweblab-local/stack.json");
+  let p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+  let base = ${fn_url};
+  let s = curl.session(base);
+  let timeout_ms = ${REQUEST_TIMEOUT_MS};
+  let load_vus = ${LOAD_VUS};
+  let load_dur = str_to_float(${LOAD_DURATION_S});
+  let load_reqs = ${LOAD_REQUESTS};
+  let p95_max = str_to_float(${P95_THRESHOLD_MS});
+  let out_csv = ${csv_path};
+  let out_sum = ${summary_path};
 
-let dslb = path_join(state_dir, "test.dslb");
-savedsl(p, dslb);
-assert(system(concat(dsl_cli(p), ["--dsl", dslb]), 60000).code == 0);
+  # 1. Cold start GET
+  let r_cold = s.get("/?limit=10&offset=0").timeout(timeout_ms).retry(5, 1000).send();
+  assert_eq(r_cold.status(), 200);
+  assert_eq(r_cold.json("$.ok").value(), "true");
+  assert_eq(r_cold.json("$.ttl_attribute").value(), "expires_at");
+  let base_total = r_cold.json("$.total").to_int();
 
-let ttl_s = str(TTL_SECONDS);
+  # 2. Warm GET
+  let r_warm = s.get("/?limit=10&offset=0").timeout(timeout_ms).send();
+  assert_eq(r_warm.status(), 200);
+  assert_eq(r_warm.json("$.cold_start").value(), "false");
+
+  # 3. POST entry 1 with XSS payload -> verify HTML escaping and TTL expires_at
+  let r_post1 = s.post("/").json("{\"author\":\"Alice <admin>\",\"message\":\"Hello <script>alert(1)</script> DynamoDB!\"}").timeout(timeout_ms).send();
+  assert_eq(r_post1.status(), 201);
+  assert_eq(r_post1.json("$.ok").value(), "true");
+  assert_eq(str_contains(r_post1.body(), "<script>"), false);
+  assert_eq(str_contains(r_post1.body(), "&lt;script&gt;alert(1)&lt;/script&gt;"), true);
+  assert_eq(str_contains(r_post1.body(), "&lt;admin&gt;"), true);
+  assert(r_post1.json("$.entry.expires_at").to_int() > 1700000000);
+
+  # 4. POST entry 2 & 3 for pagination check
+  let r_post2 = s.post("/").json("{\"author\":\"Bob\",\"message\":\"Second guestbook item\"}").timeout(timeout_ms).send();
+  assert_eq(r_post2.status(), 201);
+  let r_post3 = s.post("/").json("{\"author\":\"Carol\",\"message\":\"Third guestbook item\"}").timeout(timeout_ms).send();
+  assert_eq(r_post3.status(), 201);
+
+  # 5. GET page 1 (limit=2, offset=base_total) and page 2 (limit=2, offset=base_total+2)
+  let r_page1 = s.get("/?limit=2&offset=" + str(base_total)).timeout(timeout_ms).send();
+  assert_eq(r_page1.status(), 200);
+  assert_eq(r_page1.json("$.total").to_int(), base_total + 3);
+  assert_eq(r_page1.json("$.limit").to_int(), 2);
+  assert_eq(r_page1.json("$.offset").to_int(), base_total);
+  assert_eq(str_contains(r_page1.body(), "&lt;script&gt;alert(1)&lt;/script&gt;"), true);
+
+  let r_page2 = s.get("/?limit=2&offset=" + str(base_total + 2)).timeout(timeout_ms).send();
+  assert_eq(r_page2.status(), 200);
+  assert_eq(r_page2.json("$.total").to_int(), base_total + 3);
+  assert_eq(r_page2.json("$.offset").to_int(), base_total + 2);
+  assert_eq(str_contains(r_page2.body(), "Carol"), true);
+
+  # 6. Load check (4 VUs, 16 requests)
+  let load_res = curl.load(s.get("/?limit=5&offset=0"), load_vus, load_dur, load_reqs);
+  assert_eq(load_res.threshold(p95_max, 0.0), true);
+
+  let csv = "operation,ms\n" +
+    "Cold GET," + str(r_cold.time("total")) + "\n" +
+    "Warm GET," + str(r_warm.time("total")) + "\n" +
+    "POST entry 1," + str(r_post1.time("total")) + "\n" +
+    "POST entry 2," + str(r_post2.time("total")) + "\n" +
+    "GET page 1," + str(r_page1.time("total")) + "\n" +
+    "GET page 2," + str(r_page2.time("total")) + "\n" +
+    "Load p50," + str(load_res.p50_ms()) + "\n" +
+    "Load p95," + str(load_res.p95_ms()) + "\n";
+  file_write(out_csv, csv);
+
+  file_write(out_sum, "{\n" +
+    "  \"cold_ms\": " + str(r_cold.time("total")) + ",\n" +
+    "  \"warm_ms\": " + str(r_warm.time("total")) + ",\n" +
+    "  \"post1_ms\": " + str(r_post1.time("total")) + ",\n" +
+    "  \"post2_ms\": " + str(r_post2.time("total")) + ",\n" +
+    "  \"page1_ms\": " + str(r_page1.time("total")) + ",\n" +
+    "  \"page2_ms\": " + str(r_page2.time("total")) + ",\n" +
+    "  \"load_p50_ms\": " + str(load_res.p50_ms()) + ",\n" +
+    "  \"load_p95_ms\": " + str(load_res.p95_ms()) + ",\n" +
+    "  \"load_p99_ms\": " + str(load_res.p99_ms()) + "\n" +
+    "}\n");
+end _dsl_
+  let dslb = path_join(state_dir, "test-live.dslb");
+  savedsl(p, dslb);
+  let r = system(concat(dsl_cli(p), ["--dsl", dslb]), 120000);
+  if (r.code != 0) { println(r.stderr); }
+  assert(r.code == 0, "scenario 04 live test failed: " + r.stderr);
+}
+
+let ttl_str = str(TTL_SECONDS);
 let arch = _dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
+let out_png = ${arch_img};
+let prefix = ${NAME_PREFIX};
+let slug = ${SCENARIO_SLUG};
+let billing = ${TABLE_BILLING};
+let ttl = ${ttl_str};
 scene.canvas(920, 360, "#0f172a");
 scene.text(32.0, 42.0, 20.0, "Scenario 04: Lambda Guestbook + DynamoDB On-Demand (lmcloud)", "#f8fafc").set_attr("font-weight", "700");
-scene.text(32.0, 68.0, 13.0, "Lambda Function URL -> DynamoDB (" + ${TABLE_BILLING} + ", TTL=" + ${ttl_s} + "s)", "#94a3b8");
+scene.text(32.0, 68.0, 13.0, "Lambda Function URL -> DynamoDB (" + billing + ", TTL=" + ttl + "s)", "#94a3b8");
 scene.cluster(32.0, 96.0, 856.0, 220.0, "", "#131c2e", "#334155", 10.0, 13.0);
-let client_b = scene.box(140.0, 205.0, 175.0, 68.0, "lmcurl Session\nPOST / GET + Page", "#064e3b", "#10b981", 8.0, 13.0);
-let fn_b = scene.box(410.0, 205.0, 205.0, 68.0, "Lambda Function URL\n" + ${NAME_PREFIX} + "_tf_" + ${SCENARIO_SLUG} + "_<id>", "#1e293b", "#fbbf24", 8.0, 13.0);
-let ddb_b = scene.cylinder(690.0, 205.0, 190.0, 76.0, "DynamoDB Table\nTTL expires_at", "#1e293b", "#38bdf8", 13.0);
-scene.connector(client_b, "e", fn_b, "w", "straight", "none", "arrow", "none", "#10b981", 2.0, "HTTPS", 0.5, 0.0, -10.0);
-scene.connector(fn_b, "e", ddb_b, "w", "straight", "none", "arrow", "none", "#38bdf8", 2.0, "Put/Query", 0.5, 0.0, -10.0);
-scene.render_png(${arch_img}, 920, 360, 1);
+let client = scene.box(140.0, 205.0, 175.0, 68.0, "lmcurl Session\nPOST / GET + Page", "#064e3b", "#10b981", 8.0, 13.0);
+let fn_b = scene.box(430.0, 205.0, 205.0, 68.0, "Lambda Function URL\n" + prefix + "_tf_" + slug + "_<id>", "#1e293b", "#fbbf24", 8.0, 13.0);
+let ddb = scene.cylinder(720.0, 205.0, 185.0, 76.0, "DynamoDB Table\nTTL expires_at", "#1e293b", "#38bdf8", 13.0);
+scene.connector(client, "e", fn_b, "w", "straight", "none", "arrow", "none", "#10b981", 2.0, "HTTPS", 0.5, 0.0, -10.0);
+scene.connector(fn_b, "e", ddb, "w", "straight", "none", "arrow", "none", "#38bdf8", 2.0, "Put/Scan", 0.5, 0.0, -10.0);
+scene.render_png(out_png, 920, 360, 1);
 end _dsl_
 let arch_dslb = path_join(state_dir, "arch.dslb");
 savedsl(arch, arch_dslb);
@@ -62,7 +186,7 @@ assert(system(concat(dsl_cli(arch), ["--dsl", arch_dslb]), 60000).code == 0);
 let plot = _dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
 plot.png(${plot_img}, 860, 480);
 plot.cmd("set datafile separator ','");
-plot.cmd("set title 'Scenario 04 (lmcloud): Guestbook POST vs GET Latency (ms)' noenhanced");
+plot.cmd("set title 'Scenario 04 (lmcloud): Guestbook POST & Paginated GET Latency (ms)' noenhanced");
 plot.cmd("set yrange [0:*]; set offsets 0,0,graph 0.15,0; set grid y; unset key; set style fill solid 0.85; set boxwidth 0.55");
 plot.cmd("set ylabel 'Latency (ms)'");
 plot.cmd("plot '" + ${csv_path} + "' every ::1 using 0:2:xtic(1) with boxes lc rgb '#38bdf8', '' every ::1 using 0:2:(sprintf('%.2f ms',$2)) with labels offset 0,0.8");
@@ -77,5 +201,12 @@ if (stack_dir != ".") {
   write_file(path_join(stack_dir, arch_img), read_file(arch_img));
   write_file(path_join(stack_dir, plot_img), read_file(plot_img));
 }
-println("ok - scenario 04 test.lms passed in " + str(now() - t0) + " ms");
+let elapsed_ms = now() - t0;
+write_file(path_join(state_dir, "test-timing.json"), json_stringify({
+  scenario: "04-lambda-dynamodb-guestbook",
+  mode: live ? "live" : "offline",
+  run_id: run_id,
+  elapsed_ms: elapsed_ms
+}, 2));
+println("ok - scenario 04 test.lms passed in " + str(elapsed_ms) + " ms");
 println("estimated cost: $0.0000");

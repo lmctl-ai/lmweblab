@@ -92,3 +92,10 @@ resource "aws_lambda_function_url" "guestbook" {
   function_name      = aws_lambda_function.guestbook.function_name
   authorization_type = "NONE"
 }
+
+resource "aws_lambda_permission" "allow_public_invoke" {
+  statement_id  = "FunctionURLAllowPublicInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.guestbook.function_name
+  principal     = "*"
+}

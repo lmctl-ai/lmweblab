@@ -104,6 +104,13 @@ resource "aws_lambda_function_url" "reporter" {
   authorization_type = "NONE"
 }
 
+resource "aws_lambda_permission" "allow_public_invoke" {
+  statement_id  = "FunctionURLAllowPublicInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.reporter.function_name
+  principal     = "*"
+}
+
 resource "aws_cloudwatch_event_rule" "every_minute" {
   name                = local.rule_name
   description         = "Trigger reporter Lambda every minute (${var.run_id})"

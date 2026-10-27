@@ -2,22 +2,150 @@
 let REGION = getenv("AWS_REGION", "") != "" ? getenv("AWS_REGION", "") : "us-east-1";
 let NAME_PREFIX = "lmaws";
 let SCENARIO_SLUG = "s06";
+let LAMBDA_ROLE_NAME = "lmaws_lambda_exec";
+let AWS_PROFILE_NAME = getenv("AWS_PROFILE", "") != "" ? getenv("AWS_PROFILE", "") : "lmaws";
+let LIVE_MODE = getenv("LMWEBLAB_LIVE", "0") == "1";
 let DEFAULT_RUN_ID = getenv("LMWEBLAB_RUN_ID", "") != "" ? getenv("LMWEBLAB_RUN_ID", "") : "demo01";
+let DESTROY_TIMEOUT_MS = 600000;
 # === END CONFIG ===
+
+let live = LIVE_MODE;
+let run_id = DEFAULT_RUN_ID;
+let i = 0;
+while (i < len(ARGV)) {
+  let a = ARGV[i];
+  if (a == "--live") { live = true; }
+  else if (a == "--offline" || a == "--dry-run") { live = false; }
+  else if (a == "--run-id" && i + 1 < len(ARGV)) { i = i + 1; run_id = ARGV[i]; }
+  i = i + 1;
+}
 
 let stack_dir = file_exists("main.tf") ? "." : "scenarios/06-scheduled-report/lmcloud";
 let state_dir = path_join(stack_dir, ".lmweblab-local");
 mkdir(state_dir);
 
+let meta_path = path_join(state_dir, "stack.json");
+if (file_exists(meta_path)) {
+  let meta = json_parse(read_file(meta_path));
+  if (run_id == "demo01") { run_id = str(get(meta, "run_id", run_id)); }
+  if (get(meta, "mode", "offline") == "live") { live = true; }
+}
+
+if (live) {
+  assert(AWS_PROFILE_NAME == "lmaws", "Live teardown MUST use AWS_PROFILE=lmaws only");
+  set_env("AWS_PROFILE", AWS_PROFILE_NAME);
+  set_env("AWS_DEFAULT_PROFILE", AWS_PROFILE_NAME);
+  set_env("AWS_REGION", REGION);
+  set_env("AWS_DEFAULT_REGION", REGION);
+} else {
+  set_env("AWS_EC2_METADATA_DISABLED", "true");
+}
+
+let offline_str = live ? "false" : "true";
+let profile_str = live ? AWS_PROFILE_NAME : "";
+let t0 = now();
+let t_des0 = now();
+
 let p = _dsl_ cli="lmcloud" install="github:lmctl-ai/lmcloud@latest";
 let dir = ${stack_dir};
+let run_id = ${run_id};
+let name_prefix = ${NAME_PREFIX};
+let scenario_slug = ${SCENARIO_SLUG};
+let region = ${REGION};
+let aws_profile = ${profile_str};
+let offline_mode = ${offline_str};
+let role_name = ${LAMBDA_ROLE_NAME};
+
+if (!tofu.init(dir)) {
+  print("INIT_ERROR: " + tofu.last_error());
+  assert_close(0.0, 1.0, 0.0);
+}
+tofu.var("run_id", run_id);
+tofu.var("name_prefix", name_prefix);
+tofu.var("scenario_slug", scenario_slug);
+tofu.var("aws_region", region);
+tofu.var("aws_profile", aws_profile);
+tofu.var("offline_mode", offline_mode);
+tofu.var("lambda_role_name", role_name);
+
+if (offline_mode == "false") {
+  if (!tofu.destroy(dir)) {
+    print("DESTROY_ERROR: " + tofu.last_error());
+    assert_close(0.0, 1.0, 0.0);
+  }
+}
+
 let rem = str_trim(tofu.state_list(dir));
 assert_close(float(str_len(rem)), 0.0, 0.0);
-print("TOFU_STATE_EMPTY_OK: " + ${DEFAULT_RUN_ID});
+let post_plan = tofu.plan(dir);
+assert_close(float(post_plan.add()), 10.0, 0.0);
+print("TOFU_STATE_EMPTY_OK: " + run_id + " (post-destroy plan add=" + str(post_plan.add()) + ")");
 end _dsl_
 let dslb = path_join(state_dir, "down.dslb");
 savedsl(p, dslb);
-let r = system(concat(dsl_cli(p), ["--dsl", dslb]), 60000);
-assert(r.code == 0);
-println("ok - scenario 06 down.lms verified 0 leftovers (" + DEFAULT_RUN_ID + ")");
+let r = system(concat(dsl_cli(p), ["--dsl", dslb]), DESTROY_TIMEOUT_MS);
+let destroy_ms = now() - t_des0;
+println(r.stdout);
+if (r.code != 0) { println(r.stderr); }
+assert(r.code == 0, "scenario 06 destroy failed");
+
+# Independent leftover audit via lmaws (functions, buckets, tables, log_groups)
+let t_aud0 = now();
+let f_file = path_join(state_dir, "audit-functions.json");
+let b_file = path_join(state_dir, "audit-buckets.json");
+let t_file = path_join(state_dir, "audit-tables.json");
+let l_file = path_join(state_dir, "audit-logs.json");
+let audit_prog = _dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let is_live = ${offline_str} == "false";
+let region = ${REGION};
+let out_f = ${f_file};
+let out_b = ${b_file};
+let out_t = ${t_file};
+let out_l = ${l_file};
+if (is_live) {
+  let c = aws.region(region);
+  file_write(out_f, c.functions().json());
+  file_write(out_b, c.buckets().json());
+  file_write(out_t, c.tables().json());
+  file_write(out_l, c.log_groups().json());
+} else {
+  let c = aws.demo();
+  file_write(out_f, c.functions().json());
+  file_write(out_b, c.buckets().json());
+  file_write(out_t, c.tables().json());
+  file_write(out_l, c.log_groups().json());
+}
+end _dsl_
+let audit_dslb = path_join(state_dir, "audit.dslb");
+savedsl(audit_prog, audit_dslb);
+set_env("LMAWS_LIVE", live ? "1" : "0");
+set_env("LMAWS_MAX_COST_USD", "0.05");
+let r_aud = system(concat(dsl_cli(audit_prog), ["--dsl", audit_dslb]), 120000);
+assert(r_aud.code == 0, "lmaws audit failed: " + r_aud.stderr);
+
+for (fn_row in json_parse(read_file(f_file))) {
+  assert(!contains(json_stringify(fn_row), run_id), "Leftover Lambda function: " + json_stringify(fn_row));
+}
+for (b_row in json_parse(read_file(b_file))) {
+  assert(!contains(json_stringify(b_row), run_id), "Leftover S3 bucket: " + json_stringify(b_row));
+}
+for (tbl_row in json_parse(read_file(t_file))) {
+  assert(!contains(json_stringify(tbl_row), run_id), "Leftover DynamoDB table: " + json_stringify(tbl_row));
+}
+for (lg_row in json_parse(read_file(l_file))) {
+  assert(!contains(json_stringify(lg_row), run_id), "Leftover Log Group: " + json_stringify(lg_row));
+}
+
+let audit_ms = now() - t_aud0;
+let elapsed_ms = now() - t0;
+write_file(path_join(state_dir, "down-timing.json"), json_stringify({
+  scenario: "06-scheduled-report",
+  mode: live ? "live" : "offline",
+  run_id: run_id,
+  destroy_ms: destroy_ms,
+  audit_ms: audit_ms,
+  elapsed_ms: elapsed_ms,
+  leftovers_count: 0
+}, 2));
+println("ok - scenario 06 down.lms verified 0 leftovers (" + run_id + ") in " + str(elapsed_ms) + " ms");
 println("estimated cost: $0.0000");
