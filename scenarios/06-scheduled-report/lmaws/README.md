@@ -1,8 +1,9 @@
 ![Scenario 06 architecture](images/s06_lmaws_architecture.png)
 
-`lmctl scenarios/06-scheduled-report/lmaws/all.lms`
+`lmctl all.lms`
 
 ![Scheduled run report](images/s06_lmaws_runs.png)
+`lmctl test.lms`
 
 The fake transport models an EventBridge `rate(1 minute)` rule invoking a bounded Lambda reporter that writes an HTML/JSON report to S3 and a run row to DynamoDB. The lmcurl test polls the report endpoint and checks its JSON shape. Live scheduling is held until the pre-created execution role is available.
 

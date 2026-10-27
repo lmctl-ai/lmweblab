@@ -1,3 +1,4 @@
+assert(!contains(ARGV,"--live"), "live mode is pending the Lambda role grant");
 # === CONFIG ===
 let REQUEST_TIMEOUT_MS=5000; let P95_THRESHOLD_MS="2000.0";
 # === END CONFIG ===

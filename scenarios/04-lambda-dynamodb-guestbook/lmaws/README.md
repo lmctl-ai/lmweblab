@@ -1,8 +1,9 @@
 ![Scenario 04 architecture](images/s04_lmaws_architecture.png)
 
-`lmctl scenarios/04-lambda-dynamodb-guestbook/lmaws/all.lms`
+`lmctl all.lms`
 
 ![Latency report](images/s04_lmaws_latency.png)
+`lmctl test.lms`
 
 Offline fake transport checks a public, explicitly justified Function URL backed by a tagged on-demand DynamoDB table with TTL and cursor-friendly access. The lmcurl test covers POST/GET, bounded pagination, JSON shape and escaping. Live execution waits for the pre-created `lmaws_lambda_exec` role.
 

@@ -1,3 +1,4 @@
+assert(!contains(ARGV,"--live"), "live mode is pending the Lambda role grant");
 # === CONFIG ===
 let SCENARIO_NAME="06-scheduled-report";
 # === END CONFIG ===

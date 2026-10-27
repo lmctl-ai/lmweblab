@@ -1,1 +1,5 @@
+# === CONFIG ===
+let REGION = "us-east-1";
+# === END CONFIG ===
+assert(!contains(ARGV,"--live"), "live mode is pending the Lambda role grant");
 assert(file_exists(".lmweblab-local/state.json")); println(read_file(".lmweblab-local/state.json")); println("estimated cost: $0.0000");

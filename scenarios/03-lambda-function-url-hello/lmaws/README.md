@@ -1,8 +1,9 @@
 ![Scenario 03 architecture](images/s03_lmaws_architecture.png)
 
-`lmctl scenarios/03-lambda-function-url-hello/lmaws/all.lms`
+`lmctl all.lms`
 
 ![Latency report](images/s03_lmaws_latency.png)
+`lmctl test.lms`
 
 Offline fake transport provisions a bounded Python Lambda (`python3.12`, 128 MiB, 10 seconds) with the pre-created `lmaws_lambda_exec` role and an explicitly justified public Function URL (`NONE` authentication). The lmcurl test checks JSON shape, cold/warm calls, and p95 latency. Live deployment stays disabled until the role grant is announced.
 
