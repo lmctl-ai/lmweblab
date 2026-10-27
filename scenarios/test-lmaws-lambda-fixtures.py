@@ -36,16 +36,28 @@ def main() -> None:
             out = {"Items": page}
             if index + Limit < len(rows): out["LastEvaluatedKey"] = {"pk": page[-1]["pk"]}
             return out
+        def get_item(self, *, Key):
+            item = next((row for row in rows if row.get("pk") == Key.get("pk")), None)
+            return {"Item": item} if item else {}
 
     tables={}
     class FakeDynamo:
         def Table(self, name): return tables.setdefault(name,FakeTable())
 
     class FakeS3Client:
-        def put_object(self, **kwargs): self.last = kwargs
+        def __init__(self): self.objects = {}
+        def put_object(self, **kwargs): self.objects[(kwargs["Bucket"], kwargs["Key"])] = kwargs
+        def get_object(self, **kwargs):
+            key = (kwargs["Bucket"], kwargs["Key"])
+            if key not in self.objects:
+                error = RuntimeError("NoSuchKey")
+                error.response = {"Error": {"Code": "NoSuchKey"}}
+                raise error
+            return {"Body": types.SimpleNamespace(read=lambda: self.objects[key]["Body"])}
 
     dynamo = FakeDynamo()
-    fake_boto3 = types.SimpleNamespace(resource=lambda _name: dynamo, client=lambda _name: FakeS3Client())
+    s3 = FakeS3Client()
+    fake_boto3 = types.SimpleNamespace(resource=lambda _name: dynamo, client=lambda _name: s3)
     sys.modules["boto3"] = fake_boto3
     os.environ["TABLE_NAME"] = "lmaws_s04_fixture"
     guest = load(ROOT / "04-lambda-dynamodb-guestbook/lmaws/assets/guestbook.py", "guestbook")
@@ -69,13 +81,22 @@ def main() -> None:
     response = api.handler({"rawPath": "/api/info", "queryStringParameters": {"q": "fixture"}}, None)
     assert response["statusCode"] == 200 and json.loads(response["body"])["path"] == "/api/info"
 
+    os.environ["TABLE_NAME"] = "lmaws_s06_fixture"
+    os.environ["BUCKET_NAME"] = "lmaws-s06-fixture"
     reporter = load(ROOT / "06-scheduled-report/lmaws/assets/reporter.py", "reporter")
-    one = json.loads(reporter.handler({}, None)["body"])
-    two = json.loads(reporter.handler({}, None)["body"])
+    before = reporter.handler({}, None)
+    assert before["statusCode"] == 404
+    one = json.loads(reporter.handler({"source": "aws.events", "detail-type": "Scheduled Event"}, None)["body"])
+    two = json.loads(reporter.handler({"source": "aws.events", "detail-type": "Scheduled Event"}, None)["body"])
     assert one["scheduled_runs"] == 1 and two["scheduled_runs"] == 2
+    writes_before_poll = len(s3.objects)
+    polled = json.loads(reporter.handler({}, None)["body"])
+    polled_again = json.loads(reporter.handler({}, None)["body"])
+    assert polled["scheduled_runs"] == 2 and polled_again["scheduled_runs"] == 2
+    assert len(s3.objects) == writes_before_poll and len([row for row in rows if row.get("pk", "").startswith("report#")]) == 2
     cold=load(ROOT / "06-scheduled-report/lmaws/assets/reporter.py","reporter_cold")
-    assert json.loads(cold.handler({},None)["body"])["scheduled_runs"]==3,"schedule counter lost on cold start"
-    assert any(row.get("pk")=="report#3" for row in rows)
+    assert json.loads(cold.handler({},None)["body"])["scheduled_runs"]==2,"HTTP poll changed schedule state"
+    assert s3.objects[("lmaws-s06-fixture", "latest.html")]["ContentType"] == "text/html"
     assert guest.handler({"requestContext":{"http":{"method":"POST"}},"body":"[]"},None)["statusCode"]==400
     assert guest.handler({"requestContext":{"http":{"method":"POST"}},"body":json.dumps({"message":"x"*9000})},None)["statusCode"]==413
     print("PASS Lambda fixtures: escaping, pagination, API routing, and scheduled persistence")
