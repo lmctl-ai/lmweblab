@@ -28,7 +28,8 @@ from pathlib import Path
 assert json.loads(Path('.lmweblab-local/audit.json').read_text())['leftovers']==0
 images=list(Path('images').glob('*.png'));assert len(images)>=2
 for image in images:assert image.read_bytes().startswith(b'\x89PNG\r\n\x1a\n'),image
-assert not any('LIVE PROVEN' in p.read_text() for p in Path('.').glob('README.md'))
+# Documentation may contain sanitized live results; fixture receipts below must remain synthetic.
+assert json.loads(Path('.lmweblab-local/audit.json').read_text()).get('synthetic', True) is True
 store=Path(os.environ['LMWEBLAB_SYNTHETIC_STORE']);rows=json.loads(store.read_text()) if store.exists() else []
 actions={}
 for action in ('up','test','down','all'):

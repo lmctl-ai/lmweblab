@@ -1,5 +1,6 @@
 """Deterministic fixture for the session-login scenario; DynamoDB is the live backing store."""
 import hmac, json, os, time, secrets
+from decimal import Decimal
 try:
     import boto3
 except ImportError:
@@ -22,7 +23,8 @@ def handler(event, context=None):
     if not isinstance(body,dict): return _reply(400,{"error":"invalid request"})
     cookies = event.get("cookies") or []
     if not cookies and event.get("headers"): cookies = [event["headers"].get("cookie", "")]
-    sid = next((x.split("=", 1)[1] for x in ",".join(cookies).split(";") if x.strip().startswith("sid=") and "=" in x), None)
+    sid_values = [part.strip().split("=", 1)[1] for chunk in cookies for part in chunk.split(";") if part.strip().startswith("sid=")]
+    sid = sid_values[0] if sid_values and all(value == sid_values[0] for value in sid_values) else None
     now = _now()
     if path == "/login" and method == "POST":
         configured = os.getenv("LMWEBLAB_DEMO_PASSWORD", "")
@@ -35,7 +37,7 @@ def handler(event, context=None):
         if sid: _table().delete_item(Key={"pk": sid})
         return _reply(200, {"ok": True}, {"set-cookie": "sid=; Max-Age=0; HttpOnly; Secure; Path=/; SameSite=Lax"})
     if path == "/me" and method == "GET":
-        row = _table().get_item(Key={"pk": sid}).get("Item") if sid else None
+        row = _table().get_item(Key={"pk": sid}, ConsistentRead=True).get("Item") if sid else None
         if not row or int(row["expires_at"]) <= now:
             if sid: _table().delete_item(Key={"pk": sid})
             return _reply(401, {"error": "unauthorized"})

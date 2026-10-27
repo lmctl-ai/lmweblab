@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Dependency-free regression tests for scenarios 07-09 handlers."""
 import importlib.util, json, os, sys, unittest
+from decimal import Decimal
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scenarios/lib"))
@@ -24,8 +25,34 @@ class HandlerTests(unittest.TestCase):
     def test_expiry_fixed_clock(self):
         os.environ["LMWEBLAB_NOW"]="100"; r=self.login.handler({"rawPath":"/login","requestContext":{"http":{"method":"POST"}},"body":"{\"user\":\"demo\",\"password\":\"correct-horse\"}"}); sid=r["headers"]["set-cookie"].split("=",1)[1].split(";",1)[0]
         os.environ["LMWEBLAB_NOW"]="111"; me=self.login.handler({"rawPath":"/me","requestContext":{"http":{"method":"GET"}},"headers":{"cookie":"sid="+sid}}); self.assertEqual(me["statusCode"],401)
+
+    def test_login_serializes_dynamodb_decimal(self):
+        os.environ["LMWEBLAB_NOW"] = "100"
+        self.fake.Table("lmaws_test").rows["s_decimal"] = {
+            "pk": "s_decimal", "user": "demo", "expires_at": Decimal("200"), "run_id": "test"
+        }
+        me = self.login.handler({"rawPath":"/me", "requestContext":{"http":{"method":"GET"}}, "headers":{"cookie":"sid=s_decimal"}})
+        self.assertEqual(me["statusCode"], 200)
+        self.assertEqual(json.loads(me["body"])["expires_at"], 200)
+    def test_function_url_cookie_array_and_strong_read(self):
+        os.environ["LMWEBLAB_NOW"] = "100"
+        class Table:
+            def get_item(inner, **args):
+                self.assertEqual(args["Key"], {"pk":"s_token"})
+                self.assertIs(args.get("ConsistentRead"), True)
+                return {"Item":{"user":"demo", "expires_at":Decimal("200")}}
+        self.fake.tables["lmaws_test"] = Table()
+        event={"rawPath":"/me", "requestContext":{"http":{"method":"GET"}}, "cookies":["sid=s_token", "sid=s_token"]}
+        self.assertEqual(self.login.handler(event)["statusCode"],200)
+        event["cookies"]=["sid=s_token", "sid=other"]
+        self.assertEqual(self.login.handler(event)["statusCode"],401)
+
     def test_shortener_rejects_bad_target(self):
         r=self.short.handler({"rawPath":"/links","requestContext":{"http":{"method":"POST"}},"body":"{\"code\":\"x\",\"target\":\"http://bad\"}"}); self.assertEqual(r["statusCode"],400)
+
+    def test_shortener_rejects_invalid_redirect_status(self):
+        r=self.short.handler({"rawPath":"/links","requestContext":{"http":{"method":"POST"}},"body":"{\"code\":\"status\",\"target\":\"https://example.com/status\",\"status\":307}"})
+        self.assertEqual(r["statusCode"], 400)
     def test_worker_does_not_swallow_store_error(self):
         class Broken:
             def get_item(self, **_): return {}

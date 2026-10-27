@@ -26,7 +26,7 @@ fn sa_down(o) {
   let p=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
 let cloud=aws.example("scenario_down");check(cloud.is_demo()==${!o.live});
 let web=cloud.web_stack(${o.run_id},${o.domain},${o.state});
-let result=web.down();check(web.leftovers().len()==0);
+let result=web.down();
 file_write(".lmweblab-local/down.json",result.json());
 end _dsl_
   sa_exec(p,o,"down",1800000);
@@ -173,9 +173,10 @@ end _dsl_
     let config_path=".lmweblab-local/config-"+o.run_id+".json";
     write_file(config_path,json_stringify(o));
     let args=[flag,"--config",config_path,"--run-id",o.run_id,"--domain",o.domain];if(o.https){push(args,"--acm");}
-    let up=system(concat(["lmctl","up.lms"],args),2400000);
-    let test={code:1};if(up.code==0){test=system(concat(["lmctl","test.lms"],args),600000);}
-    let down=system(concat(["lmctl","down.lms"],args),2400000);
+    let up_started=now();let up=system(concat(["lmctl","up.lms"],args),2400000);let up_ms=now()-up_started;
+    let test_started=now();let test={code:1,stdout:"",stderr:""};if(up.code==0){test=system(concat(["lmctl","test.lms"],args),600000);}let test_ms=now()-test_started;
+    let down_started=now();let down=system(concat(["lmctl","down.lms"],args),2400000);let down_ms=now()-down_started;
+    write_file(".lmweblab-local/phases-"+o.run_id+".json",json_stringify({engine:"lmaws",scenario:number,mode:o.live?"live":"offline",run_id:o.run_id,up_ms:up_ms,test_ms:test_ms,down_ms:down_ms,up_exit:up.code,test_exit:test.code,down_exit:down.code}));
     write_file(".lmweblab-local/all.log",up.stdout+up.stderr+get(test,"stdout","")+get(test,"stderr","")+down.stdout+down.stderr);
     assert(down.code==0,"cleanup incomplete; rerun down.lms, inspect private log");
     assert(up.code==0&&test.code==0,"scenario failed; cleanup completed; inspect private all.log");

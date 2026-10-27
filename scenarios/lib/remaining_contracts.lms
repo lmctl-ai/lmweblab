@@ -11,13 +11,16 @@ if(${n}=="07") {
   let mid=accepted.json("$.message_id").value();let poll=s.get("/tasks/"+mid).send();assert_eq(poll.status(),200);assert_eq(poll.json("$.status").value(),"processed");
   let poison=s.post("/enqueue").json("{\"task\":\"poison\"}").send();assert_eq(poison.status(),202);let d1=s.get("/dlq").send();let d2=s.get("/dlq").send();let d3=s.get("/dlq").send();assert(str_contains(d3.body(),"poison"));
 } else if(${n}=="08") {
+  let malformed=s.post("/login").body("[").send();assert_eq(malformed.status(),400);
   let bad=s.post("/login").json("{\"user\":\"demo\",\"password\":\"wrong\"}").send();file_write(".lmweblab-local/bad-login.txt",str(bad.status())+" "+bad.body());assert(bad.status()==401 || bad.status()==400);
   let login=s.post("/login").json("{\"user\":\"demo\",\"password\":\"correct-horse\"}").send();assert_eq(login.status(),200);assert(login.cookie("sid")!="");
   let sid=login.cookie("sid");assert(sid!="");let me=s.get("/me").header("Cookie","sid="+sid).send();assert_eq(me.status(),200);assert_eq(me.json("$.user").value(),"demo");
   let tick=s.get("/__clock?now=4102444800").send();assert_eq(tick.status(),204);assert_eq(s.get("/me").header("Cookie","sid="+sid).send().status(),401);
   let out=s.post("/logout").header("Cookie","sid="+sid).json("{}").send();assert_eq(out.status(),200);assert_eq(s.get("/me").header("Cookie","sid="+sid).send().status(),401);
 } else {
+  let malformed=s.post("/links").body("[").send();assert_eq(malformed.status(),400);
   let bad=s.post("/links").json("{\"code\":\"bad\",\"target\":\"http://insecure.example\"}").send();assert_eq(bad.status(),400);
+  let bad_status=s.post("/links").json("{\"code\":\"status\",\"target\":\"https://example.com/status\",\"status\":307}").send();assert_eq(bad_status.status(),400);
   let created=s.post("/links").json("{\"code\":\"new\",\"target\":\"https://example.com/new\",\"status\":302}").send();assert_eq(created.status(),201);
   assert_eq(s.post("/links").json("{\"code\":\"new\",\"target\":\"https://example.com/new\"}").send().status(),409);
   let a=s.get("/demo").follow(false).send();assert_eq(a.status(),302);assert_eq(a.header("location"),"https://example.com/welcome");

@@ -7,6 +7,12 @@ fn rw_exec(p,o,label,limit) {
   let r=system(concat(["env","AWS_PROFILE=lmaws","AWS_DEFAULT_PROFILE=lmaws","AWS_REGION="+o.region,"LMAWS_LIVE="+(o.live?"1":"0"),"LMAWS_MAX_COST_USD="+(o.number=="10"?str(num(o.cap)/2):o.cap),"LMAWS_LEDGER_DIR=.lmweblab-local/ledgers","LMAWS_EVIDENCE_DIR=.lmweblab-local/evidence"],command),limit);
   write_file(".lmweblab-local/"+label+".log",r.stdout+r.stderr);assert(r.code==0,"lmaws failed; inspect private "+label+".log");
 }
+fn rw_exec_try(p,o,label,limit) {
+  let code=".lmweblab-local/"+label+".dslb";savedsl(p,code);
+  let command=concat(dsl_cli(p),[o.live?"--live":"--dry-run","--profile","lmaws","--dsl",code]);
+  let r=system(concat(["env","AWS_PROFILE=lmaws","AWS_DEFAULT_PROFILE=lmaws","AWS_REGION="+o.region,"LMAWS_LIVE="+(o.live?"1":"0"),"LMAWS_MAX_COST_USD="+(o.number=="10"?str(num(o.cap)/2):o.cap),"LMAWS_LEDGER_DIR=.lmweblab-local/ledgers","LMAWS_EVIDENCE_DIR=.lmweblab-local/evidence"],command),limit);
+  write_file(".lmweblab-local/"+label+".log",r.stdout+r.stderr);return r;
+}
 fn rw_step(o,op,args) {
   let encoded=json_stringify(args);let state=".lmweblab-local/serverless-"+o.run_id+".json";
   let p=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
@@ -37,21 +43,29 @@ fn rw_down(o) {
   let state=".lmweblab-local/serverless-"+o.run_id+".json";
   let p=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
 let c=aws.region(${o.region});if(${!o.live}){c=c.demo();}
-let run=c.serverless_stack(${o.run_id},${o.domain},${state});let removed=run.down();check(run.leftovers().len()==0);file_write(".lmweblab-local/down.json",removed.json());
+let run=c.serverless_stack(${o.run_id},${o.domain},${state});let removed=run.down();file_write(".lmweblab-local/down.json",removed.json());
 end _dsl_
-  rw_exec(p,o,"down",240000);
+  let serverless_result=rw_exec_try(p,o,"down",300000);
   let webstate=".lmweblab-local/web-"+o.run_id+".json";
+  let web_result={code:0,stdout:"",stderr:""};
   if(file_exists(webstate)) {
     let pweb=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
-let c=aws.region(${o.region});if(${!o.live}){c=c.demo();}let web=c.web_stack(${o.run_id},${o.domain},${webstate});let removed=web.down();check(web.leftovers().len()==0);
+let c=aws.region(${o.region});if(${!o.live}){c=c.demo();}let web=c.web_stack(${o.run_id},${o.domain},${webstate});let removed=web.down();
 end _dsl_
-    rw_exec(pweb,o,"web-down",1800000);
+    web_result=rw_exec_try(pweb,o,"web-down",1800000);
   }
+  let settle=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let c=aws.region(${o.region});if(${!o.live}){c=c.demo();}
+let run=c.serverless_stack(${o.run_id},${o.domain},${state});let settled=run.settle(900);check(run.leftovers().len()==0);file_write(".lmweblab-local/settled.json",settled.json());
+end _dsl_
+  let settle_result=rw_exec_try(settle,o,"settle",1200000);
   let audit=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
 let c=aws.region(${o.region});if(${!o.live}){c=c.demo();}check(c.serverless_find(${o.run_id}).len()==0);if(${o.number}=="07"){check(c.sqs_event_source_mappings(${o.run_id}).len()==0);}if(${o.number}=="10"){check(c.web_find(${o.run_id},${o.domain}).len()==0);}
 file_write(".lmweblab-local/audit.json","{\"leftovers\":0,\"synthetic\":"+str(${!o.live})+"}");
 end _dsl_
-  rw_exec(audit,o,"audit",180000);
+  let audit_result=rw_exec_try(audit,o,"audit",180000);
+  write_file(".lmweblab-local/cleanup-exits-"+o.run_id+".json",json_stringify({serverless:serverless_result.code,web:web_result.code,settle:settle_result.code,audit:audit_result.code}));
+  assert(serverless_result.code==0&&web_result.code==0&&settle_result.code==0&&audit_result.code==0,"cleanup incomplete; inspect private down/web-down/settle/audit logs");
 }
 fn rw_run(number,action,config,argv) {
   let o=merge(config,{number:number,live:false,run_id:"cafe"+number});
@@ -62,6 +76,7 @@ fn rw_run(number,action,config,argv) {
     else if(argv[i]=="--run-id"){i=i+1;o.run_id=argv[i];}i=i+1;
   }
   assert(!o.live||action=="down"||action=="status"||getenv("LMWEBLAB_REMAINING_LIVE_GO","")=="1","Live runs await the Lead go after scenarios 03–06");
+  assert(!o.live||action=="down"||action=="status"||o.number!="07","scenario 07 live execution is not authorized yet");
   assert(!o.live||getenv("AWS_PROFILE","")=="lmaws","live profile must be lmaws");
   assert(!o.live||getenv("LMAWS_ENDPOINT","")=="","live must not use a fake transport");
   assert(!o.live||o.run_id!="cafe"+number,"live runs require a fresh explicit --run-id");
@@ -73,8 +88,11 @@ fn rw_run(number,action,config,argv) {
     write_file(".lmweblab-local/"+action+"-child.log",child.stdout+child.stderr);
     if(child.code!=0){let down=system(concat(["lmctl","down.lms"],args),o.live?1800000:240000);assert(down.code==0,"phase failed and cleanup incomplete");assert(false,"phase failed; cleanup attempted; inspect private log");}
   }else if(action=="all") {
-    let up=system(concat(["lmctl","up.lms"],args),o.live?1800000:240000);let tested={code:1,stdout:"",stderr:""};if(up.code==0){tested=system(concat(["lmctl","test.lms"],args),o.live?2400000:300000);}
-    let down=system(concat(["lmctl","down.lms"],args),o.live?1800000:240000);write_file(".lmweblab-local/all.log",up.stdout+up.stderr+tested.stdout+tested.stderr+down.stdout+down.stderr);
+    let up_started=now();let up=system(concat(["lmctl","up.lms"],args),o.live?1800000:240000);let up_ms=now()-up_started;
+    let test_started=now();let tested={code:1,stdout:"",stderr:""};if(up.code==0){tested=system(concat(["lmctl","test.lms"],args),o.live?2400000:300000);}let test_ms=now()-test_started;
+    let down_started=now();let down=system(concat(["lmctl","down.lms"],args),o.live?2400000:240000);let down_ms=now()-down_started;
+    write_file(".lmweblab-local/phases-"+o.run_id+".json",json_stringify({run_id:o.run_id,live:o.live,up_ms:up_ms,test_ms:test_ms,down_ms:down_ms,up_exit:up.code,test_exit:tested.code,down_exit:down.code}));
+    write_file(".lmweblab-local/all.log",up.stdout+up.stderr+tested.stdout+tested.stderr+down.stdout+down.stderr);
     assert(down.code==0,"teardown incomplete; inspect private all.log");assert(up.code==0&&tested.code==0,"scenario failed; teardown attempted; inspect private all.log");
   }else if(action=="up"){rw_up(o);}
   else if(action=="test") {
@@ -91,5 +109,5 @@ end _dsl_
     rw_exec(p,o,"status",120000);
   }
   write_file(".lmweblab-local/"+action+"-receipt.json",json_stringify({scenario:number,synthetic:!o.live,passed:true,elapsed_ms:now()-start}));println("PASS "+(o.live?"live":"synthetic")+" scenario "+number+" "+action);
-  let cost="0.0000";if(o.live){let summary=".lmweblab-local/state.json";if(action=="down"||action=="all"){summary=".lmweblab-local/down.json";}if(file_exists(summary)){cost=get(json_parse(read_file(summary)),"estimated_cost_usd",cost);}if(number=="10"&&file_exists(".lmweblab-local/web-"+o.run_id+".json")){cost=str(num(cost)+num(get(json_parse(read_file(".lmweblab-local/web-"+o.run_id+".json")),"total_estimated_usd","0")));}}println("estimated cost: $"+cost);
+  let cost="0.0000";if(o.live){let summary=".lmweblab-local/state.json";if(action=="down"||action=="all"){summary=".lmweblab-local/settled.json";}if(file_exists(summary)){cost=get(json_parse(read_file(summary)),"estimated_cost_usd",cost);}if(number=="10"&&file_exists(".lmweblab-local/web-"+o.run_id+".json")){cost=str(num(cost)+num(get(json_parse(read_file(".lmweblab-local/web-"+o.run_id+".json")),"total_estimated_usd","0")));}}println("estimated cost: $"+cost);
 }

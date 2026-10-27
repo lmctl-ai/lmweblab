@@ -10,6 +10,24 @@ let r=curl.session(${o.url}).get(${path}).proxy("").timeout(5000).send();assert_
 end _dsl_
   for(i in range(0,rounds)){rw_http(p,"poll");if(contains(read_file(output),needle)){return true;}sleep_ms(delay);}return false;
 }
+
+# Record the first and warm invocation plus a bounded 4-VU/16-request p95.
+# The output is private and deliberately contains only status/timing numbers.
+fn rw_record_metrics(o,path,label) {
+  let output=".lmweblab-local/remaining-metrics-"+label+".json";
+  let p=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let s=curl.session(${o.url});
+let first=s.get(${path}).proxy("").timeout(5000).retry(3,500).send();
+let warm=s.get(${path}).proxy("").timeout(5000).retry(3,500).send();
+let load=curl.load(s.get(${path}).proxy("").timeout(5000),4,5.0,16);
+file_write(${output},"{\"path\":\""+${path}+"\",\"first_status\":"+str(first.status())+",\"warm_status\":"+str(warm.status())+",\"first_ms\":"+str(first.time("total"))+",\"warm_ms\":"+str(warm.time("total"))+",\"requests\":"+str(load.requests())+",\"p95_ms\":"+str(load.p95_ms())+",\"error_rate\":"+str(load.error_rate())+"}\n");
+assert_eq(first.status(),200);assert_eq(warm.status(),200);
+assert_eq(load.requests(),16);assert(load.error_rate()==0.0);assert(load.threshold(2000.0,0.0));
+end _dsl_
+  rw_http(p,"metrics-"+label);
+  return json_parse(read_file(output));
+}
+
 fn rw_live_test(o) {
   if(o.number=="07") {
     let p=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
@@ -22,8 +40,9 @@ end _dsl_
     rw_http(poison,"poison");assert(rw_poll(o,"/dlq","poison",40,3000),"DLQ redrive timed out");
   }else if(o.number=="08") {
     let password=getenv("LMWEBLAB_DEMO_PASSWORD","");assert(len(password)>=12,"set a private demo password of at least 12 characters");assert(o.ttl_seconds>=1&&o.ttl_seconds<=30,"live expiry test requires TTL_SECONDS 1..30");let body=json_stringify({user:"demo",password:password});
+    rw_record_metrics(o,"/","08-root");
     let p=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
-let s=curl.session(${o.url});let bad=s.post("/login").json("{\"user\":\"unknown\"}").proxy("").timeout(5000).send();assert_eq(bad.status(),401);let login=s.post("/login").json(${body}).proxy("").timeout(5000).send();assert_eq(login.status(),200);let sid=login.cookie("sid");assert(sid!="");let me=s.get("/me").header("Cookie","sid="+sid).proxy("").timeout(5000).send();assert_eq(me.status(),200);file_write(".lmweblab-local/session-cookie",sid);
+let s=curl.session(${o.url});let bad=s.post("/login").json("{\"user\":\"unknown\"}").proxy("").timeout(5000).send();assert_eq(bad.status(),401);let login=s.post("/login").json(${body}).proxy("").timeout(5000).send();file_write(".lmweblab-local/login-response.json",login.body());assert_eq(login.status(),200);let sid=login.cookie("sid");assert(sid!="");let me=s.get("/me").header("Cookie","sid="+sid).proxy("").timeout(5000).send();file_write(".lmweblab-local/me-response.json",str(me.status())+" "+me.body());assert_eq(me.status(),200);file_write(".lmweblab-local/session-cookie",sid);
 end _dsl_
     rw_http(p,"login");sleep_ms((o.ttl_seconds+2)*1000);let sid=read_file(".lmweblab-local/session-cookie");
     let expired=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
@@ -31,6 +50,7 @@ let s=curl.session(${o.url});assert_eq(s.get("/me").header("Cookie","sid="+${sid
 end _dsl_
     rw_http(expired,"expiry-logout");
   }else {
+    rw_record_metrics(o,"/","09-root");
     let p=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
 let s=curl.session(${o.url});let body="{\"code\":\"fresh\",\"target\":\"https://example.com/new\",\"status\":302}";let created=s.post("/links").json(body).proxy("").timeout(5000).send();assert_eq(created.status(),201);assert_eq(s.post("/links").json(body).proxy("").timeout(5000).send().status(),409);let temporary=s.get("/demo").follow(false).proxy("").timeout(5000).send();assert_eq(temporary.status(),302);let permanent=s.get("/perm").follow(false).proxy("").timeout(5000).send();assert_eq(permanent.status(),301);let again=s.get("/demo").follow(false).proxy("").timeout(5000).send();assert(again.json("$.hits").to_int()>=2);assert_eq(s.get("/missing").proxy("").timeout(5000).send().status(),404);
 end _dsl_

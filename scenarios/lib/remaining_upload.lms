@@ -7,6 +7,7 @@ fn rw_upload_test(o) {
   let request=json_stringify({key:"large.png",content_type:"image/png",size:o.max_upload_bytes+1});
   let p=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
 let s=curl.session(${base});let signed=s.post("/presign").json("{\"key\":\"demo.png\",\"content_type\":\"image/png\",\"size\":3}").timeout(5000).proxy("").send();assert_eq(signed.status(),200);assert_eq(signed.json("$.expires_in").to_int(),${o.upload_expiry_seconds});let url=signed.json("$.url").value();file_write(".lmweblab-local/signed-url",url);
+assert_eq(s.post("/presign").body("[").proxy("").timeout(5000).send().status(),400);assert_eq(s.post("/presign").json("{\"key\":\"bad.txt\",\"content_type\":\"image/png\",\"size\":3}").proxy("").timeout(5000).send().status(),400);
 assert_eq(curl.session(url).put("").body("PNG").header("content-type","image/png").timeout(5000).proxy("").send().status(),200);
 let fetched=curl.session(${fetch_base}).get(${fetch_path}).timeout(10000).proxy("").send();assert_eq(fetched.status(),200);assert_eq(fetched.body(),"PNG");assert_eq(fetched.header("content-type"),"image/png");
 assert_eq(curl.session(url).put("").body("PNG").header("content-type","text/plain").proxy("").timeout(5000).send().status(),403);assert_eq(curl.session(url).put("").body("PNGG").header("content-type","image/png").proxy("").timeout(5000).send().status(),403);assert_eq(s.post("/presign").json(${request}).proxy("").timeout(5000).send().status(),413);assert_eq(s.post("/presign").json("{\"key\":\"bad.png\",\"content_type\":\"text/plain\",\"size\":3}").proxy("").timeout(5000).send().status(),415);
@@ -16,5 +17,11 @@ end _dsl_
   let expired=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
 let response=curl.session(${url}).put("").body("PNG").header("content-type","image/png").proxy("").timeout(5000).send();assert_eq(response.status(),403);
 end _dsl_
-  rw_http(expired,"upload-expired");if(!o.live){write_file(stop,"done");}
+  rw_http(expired,"upload-expired");
+  let metrics=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let s2=curl.session(${fetch_base});let first=s2.get(${fetch_path}).proxy("").timeout(10000).send();let warm=s2.get(${fetch_path}).proxy("").timeout(10000).send();let load=curl.load(s2.get(${fetch_path}).proxy(""),4,5.0,16);file_write(".lmweblab-local/remaining-metrics-10-gallery.json","{\"path\":\""+${fetch_path}+"\",\"first_status\":"+str(first.status())+",\"warm_status\":"+str(warm.status())+",\"first_ms\":"+str(first.time("total"))+",\"warm_ms\":"+str(warm.time("total"))+",\"requests\":"+str(load.requests())+",\"p95_ms\":"+str(load.p95_ms())+",\"error_rate\":"+str(load.error_rate())+"}\n");
+assert_eq(first.status(),200);assert_eq(warm.status(),200);assert_eq(load.requests(),16);assert(load.error_rate()==0.0);assert(load.threshold(2000.0,0.0));
+end _dsl_
+  rw_http(metrics,"metrics-10-gallery");
+if(!o.live){write_file(stop,"done");}
 }
