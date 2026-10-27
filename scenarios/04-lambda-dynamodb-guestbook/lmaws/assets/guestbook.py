@@ -81,7 +81,7 @@ def _handler(event, context):
                 if not isinstance(start,dict) or set(start)!={"pk"} or not isinstance(start["pk"],str) or len(start["pk"])>1024: raise ValueError("invalid cursor key")
             except Exception:
                 return {"statusCode": 400, "body": json.dumps({"ok": False, "error": "invalid cursor"})}
-        response = TABLE.scan(Limit=limit, **({"ExclusiveStartKey": start} if start else {}))
+        response = TABLE.scan(Limit=limit, ConsistentRead=True, **({"ExclusiveStartKey": start} if start else {}))
         page = [x for x in response.get("Items", []) if int(x.get("expires_at", 0)) > now_s]
         next_key = response.get("LastEvaluatedKey")
         next_cursor = base64.urlsafe_b64encode(json.dumps(next_key).encode()).decode() if next_key else ""

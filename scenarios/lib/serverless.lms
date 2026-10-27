@@ -1,0 +1,158 @@
+# Shared lifecycle engine. Real AWS dispatch is confined to lmaws with one profile.
+import "./serverless_http.lms";
+
+fn sv_dispatch(program,o,name,limit) {
+  let code=".lmweblab-local/"+o.run_id+"-"+name+".dslb";savedsl(program,code);
+  let flags=o.live?["--live","--profile","lmaws","--region",o.region]:["--dry-run"];
+  let command=concat(dsl_cli(program),concat(flags,["--dsl",code]));
+  let settings=["env","AWS_PROFILE=lmaws","AWS_DEFAULT_PROFILE=lmaws","AWS_REGION="+o.region,"AWS_DEFAULT_REGION="+o.region,"LMAWS_LIVE="+(o.live?"1":"0"),"LMAWS_MAX_COST_USD="+o.cap,"LMAWS_LEDGER_DIR=.lmweblab-local/ledgers","LMAWS_EVIDENCE_DIR=.lmweblab-local/evidence"];
+  let result=system(concat(settings,command),limit);
+  write_file(".lmweblab-local/"+o.run_id+"-"+name+".log",result.stdout+result.stderr);
+  return result;
+}
+fn sv_sdk(program,o,name,limit){let result=sv_dispatch(program,o,name,limit);assert(result.code==0,"lmaws operation failed; stop scenario and inspect private "+name+" log; down is recoverable");}
+fn sv_state(o){return ".lmweblab-local/serverless-"+o.run_id+".json";}
+fn sv_web_state(o){return ".lmweblab-local/web-"+o.run_id+".json";}
+fn sv_step(o,op,settings){
+  let encoded=json_stringify(settings);let path=sv_state(o);
+  let program=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let cloud=aws.region(${o.region});if(${!o.live}){cloud=cloud.demo();}check(cloud.is_demo()==${!o.live});
+let run=cloud.serverless_stack(${o.run_id},${o.domain},${path});
+let result=run.step(${op},${encoded});file_write(".lmweblab-local/state.json",run.status().json());
+end _dsl_
+  sv_sdk(program,o,op,240000);
+  let meta=json_parse(read_file(".lmweblab-local/state.json"));
+  let saved=".lmweblab-local/metadata-"+o.run_id+".json";
+  if(file_exists(saved)){meta=merge(json_parse(read_file(saved)),meta);}
+  meta.live=o.live;meta.domain=o.domain;meta.number=o.number;
+  write_file(".lmweblab-local/state.json",json_stringify(meta));write_file(saved,json_stringify(meta));return meta;
+}
+fn sv_web(o,op,settings){
+  let encoded=json_stringify(settings);let path=sv_web_state(o);
+  let program=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let cloud=aws.region(${o.region});if(${!o.live}){cloud=cloud.demo();}check(cloud.is_demo()==${!o.live});
+let web=cloud.web_stack(${o.run_id},${o.domain},${path});let result=web.step(${op},${encoded});
+end _dsl_
+  sv_sdk(program,o,"web-"+op,1800000);
+}
+fn sv_up(o){
+  if(o.number=="04"||o.number=="06"){sv_step(o,"table",{ttl_attribute:"expires_at"});}
+  if(o.number=="06"){sv_step(o,"bucket",{});}
+  let meta=sv_step(o,"lambda",{slug:o.slug,runtime:o.runtime,handler:o.handler,source_file:o.source_file,role:o.role,memory_mb:o.memory_mb,timeout_s:o.timeout_s,ttl_seconds:o.ttl_seconds,url_reason:"ephemeral public web-lab endpoint; no secrets; capped requests and immediate teardown"});
+  if(o.live){
+    sv_step(o,"reserve_http",{requests:100,bytes:2097152});
+    let first=sl_first_invokes(o,meta);first.run_id=o.run_id;first.live=o.live;write_file(".lmweblab-local/first-warm-"+o.run_id+".json",json_stringify(first));
+  }
+  if(o.number=="03"||o.number=="05"){
+    if(o.number=="05"){sv_web(o,"bucket",{site_dir:"../../../shared/site"});}
+    sv_web(o,"certificate",{});
+    sv_web(o,"lambda_distribution",{function_name:meta.lambda_name,lambda_url:meta.lambda_url,mixed:o.number=="05"});
+    sv_web(o,"dns_site",{});
+    let state=json_parse(read_file(sv_web_state(o)));
+    meta.cf_url="http://"+state.cf_domain;meta.site_url="http://"+state.site;
+  }
+  if(o.number=="06"){sv_step(o,"event",{schedule:o.schedule});}
+  meta.live=o.live;meta.domain=o.domain;meta.number=o.number;
+  write_file(".lmweblab-local/state.json",json_stringify(meta));write_file(".lmweblab-local/metadata-"+o.run_id+".json",json_stringify(meta));
+}
+fn sv_test(o){
+  if(!o.live){
+    let result=system(["lmctl","fixture_test.lms"],240000);write_file(".lmweblab-local/fixture-test.log",result.stdout+result.stderr);assert(result.code==0,"offline HTTP fixture contract failed");return;
+  }
+  let meta=json_parse(read_file(".lmweblab-local/state.json"));
+  let result=sl_http_test(o,meta);result.run_id=o.run_id;result.live=true;
+  write_file(".lmweblab-local/http-result-"+o.run_id+".json",json_stringify(result));
+  if(o.number=="06"){
+    sv_step(o,"report",{});
+    let report=json_parse(read_file(".lmweblab-local/state.json"));
+    let latest=json_parse(report.latest_json_body);assert(latest.scheduled_runs>=2,"two actual scheduled reports are required");
+    assert(contains(report.latest_html_body,"<html>"),"S3 HTML artifact missing");
+  }
+  # The conservative admitted bound covers the cold/warm calls, retries and short load.
+  sv_step(o,"record_http",{requests:100,bytes:2097152});
+}
+fn sv_down(o){
+  let path=sv_state(o);let web_path=sv_web_state(o);let has_web=file_exists(web_path);
+  let web_result={code:0};
+  if(has_web){
+    let web_program=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let cloud=aws.region(${o.region});if(${!o.live}){cloud=cloud.demo();}
+let web=cloud.web_stack(${o.run_id},${o.domain},${web_path});let removed=web.down();check(web.leftovers().len()==0);
+end _dsl_
+    web_result=sv_dispatch(web_program,o,"web-down",1800000);
+  }
+  let program=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let cloud=aws.region(${o.region});if(${!o.live}){cloud=cloud.demo();}check(cloud.is_demo()==${!o.live});
+let run=cloud.serverless_stack(${o.run_id},${o.domain},${path});let removed=run.down();check(run.leftovers().len()==0);
+file_write(".lmweblab-local/down.json",removed.json());
+end _dsl_
+  let serverless_result=sv_dispatch(program,o,"down",1800000);
+  assert(web_result.code==0&&serverless_result.code==0,"teardown incomplete; both cleanup paths attempted; inspect private logs");
+  let audit=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let cloud=aws.region(${o.region});if(${!o.live}){cloud=cloud.demo();}
+let serverless=cloud.serverless_find(${o.run_id});check(serverless.len()==0);
+if(${has_web}){check(cloud.web_find(${o.run_id},${o.domain}).len()==0);}
+file_write(".lmweblab-local/audit-"+${o.run_id}+".json","{\"leftovers\":0,\"live\":"+str(${o.live})+"}");
+end _dsl_
+  sv_sdk(audit,o,"audit",180000);
+}
+fn sv_run(number,action,config,argv){
+  let o=merge(config,{number:number,live:getenv("LMWEBLAB_LIVE","0")=="1",run_id:getenv("LMWEBLAB_RUN_ID","")});
+  let i=0;let explicit_mode=false;
+  while(i<len(argv)){
+    if(argv[i]=="--config"&&i+1<len(argv)){i=i+1;o=merge(o,json_parse(read_file(argv[i])));}
+    else if(argv[i]=="--live"){o.live=true;explicit_mode=true;}
+    else if(argv[i]=="--offline"||argv[i]=="--dry-run"){o.live=false;explicit_mode=true;}
+    else if(argv[i]=="--run-id"&&i+1<len(argv)){i=i+1;o.run_id=argv[i];}
+    else if(argv[i]=="--domain"&&i+1<len(argv)){i=i+1;o.domain=argv[i];}
+    i=i+1;
+  }
+  for(flag in argv){if(flag=="--live"){o.live=true;}if(flag=="--offline"||flag=="--dry-run"){o.live=false;}}
+  assert(o.samples>=1&&o.samples<=20,"load samples must be 1..20 within the admitted request bound");
+  assert(num(o.cap)>0&&num(o.cap)<=0.10,"scenario cap must be within $0.10 including the paired web budget");
+  assert(o.region=="us-east-1"&&o.prefix=="lmaws","scenario scope is lmaws / us-east-1");
+  mkdir(".lmweblab-local");
+  if(o.run_id==""&&action!="up"&&action!="all"&&file_exists(".lmweblab-local/active.json")){
+    let active=json_parse(read_file(".lmweblab-local/active.json"));o.run_id=active.run_id;o.domain=active.domain;if(!explicit_mode){o.live=active.live;}
+  }
+  if(o.run_id==""){o.run_id=o.live?str(now()):"cafe"+number;}
+  assert(regex_test(o.run_id,"^[0-9a-f]{4,24}$"),"fresh run id must be 4..24 hexadecimal digits");
+  assert(!o.live||getenv("LMAWS_ENDPOINT","")=="","live deployment must not use a fake SDK endpoint");
+  assert(!o.live||getenv("AWS_PROFILE","")=="lmaws","all live calls require AWS_PROFILE=lmaws only");
+  assert(!o.live||(number!="03"&&number!="05")||o.domain!="example.com"&&o.domain!="","set authorized LMWEBLAB_DOMAIN");
+  write_file(".lmweblab-local/active.json",json_stringify({run_id:o.run_id,domain:o.domain,live:o.live}));
+  let started=now();
+  if((action=="up"||action=="test")&&!contains(argv,"--phase-child")){
+    let settings=".lmweblab-local/config-"+o.run_id+"-"+action+".json";write_file(settings,json_stringify(o));
+    let args=[o.live?"--live":"--offline","--config",settings,"--run-id",o.run_id,"--domain",o.domain,"--phase-child"];
+    let executed=system(concat(["lmctl",action+".lms"],args),2400000);
+    write_file(".lmweblab-local/"+action+"-child-"+o.run_id+".log",executed.stdout+executed.stderr);
+    if(executed.code!=0){
+      let recovery=system(concat(["lmctl","down.lms"],args),2400000);
+      write_file(".lmweblab-local/recovery-"+o.run_id+".log",recovery.stdout+recovery.stderr);
+      assert(recovery.code==0,"phase failed and teardown incomplete; stop scenario and inspect private state");
+      assert(false,"phase failed; owned cleanup verified; inspect private child log");
+    }
+  }else if(action=="all"){
+    let settings=".lmweblab-local/config-"+o.run_id+".json";write_file(settings,json_stringify(o));
+    let args=[o.live?"--live":"--offline","--config",settings,"--run-id",o.run_id,"--domain",o.domain];
+    let up=system(concat(["lmctl","up.lms"],args),2400000);let tested={code:1,stdout:"",stderr:""};
+    if(up.code==0){tested=system(concat(["lmctl","test.lms"],args),900000);}
+    let down=system(concat(["lmctl","down.lms"],args),2400000);
+    write_file(".lmweblab-local/all-"+o.run_id+".log",up.stdout+up.stderr+tested.stdout+tested.stderr+down.stdout+down.stderr);
+    assert(down.code==0,"cleanup incomplete; rerun down with this run id; inspect private log");
+    assert(up.code==0&&tested.code==0,"scenario failed; cleanup verified; stop this scenario and inspect private error");
+  }else if(action=="up"){sv_up(o);}
+  else if(action=="test"){sv_test(o);}
+  else if(action=="down"){sv_down(o);}
+  else{
+    let path=sv_state(o);
+    let program=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
+let cloud=aws.region(${o.region});if(${!o.live}){cloud=cloud.demo();}
+let run=cloud.serverless_stack(${o.run_id},${o.domain},${path});file_write(".lmweblab-local/status.json",run.status().json());
+end _dsl_
+    sv_sdk(program,o,"status",120000);
+  }
+  write_file(".lmweblab-local/"+action+"-"+o.run_id+".json",json_stringify({number:number,run_id:o.run_id,live:o.live,elapsed_ms:now()-started,passed:true}));
+  println("PASS scenario "+number+" "+action+"; private receipt retained ("+str(now()-started)+" ms)");
+}

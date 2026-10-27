@@ -1,0 +1,39 @@
+# === CONFIG ===
+let REQUEST_TIMEOUT_MS = 5000;
+let P95_THRESHOLD_MS = "2000.0";
+# === END CONFIG ===
+assert(!contains(ARGV,"--live")&&getenv("LMWEBLAB_LIVE","0")!="1", "live mode is pending the Lambda role grant");
+assert(file_exists(".lmweblab-local/state.json"));
+mkdir("images"); mkdir("data");
+let state = json_parse(read_file(".lmweblab-local/state.json"));
+let endpoint = get(state, "endpoint", "https://lmaws-s03-demo.lambda-url.local/");
+let token = str(now()); let ready_file = ".lmweblab-local/s03-ready-" + token + ".txt"; let stop_file = ".lmweblab-local/s03-stop-" + token;
+fn serve_fixture() { system(["python3", "../../lib/lambda_fixture_spawn.py", "03", ready_file, stop_file], 120000); }
+fn run_contract() {
+  for (i in range(0, 200)) { if (file_exists(ready_file)) { break; } sleep_ms(10); }
+  assert(file_exists(ready_file)); let base = trim(read_file(ready_file));
+  let p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let s = curl.session(${base});
+let cold = s.get("/json?name=fixture").proxy("").timeout(${REQUEST_TIMEOUT_MS}).send();
+let warm = s.get("/json?name=fixture").proxy("").timeout(${REQUEST_TIMEOUT_MS}).send();
+assert_eq(cold.status(), 200); assert_eq(warm.status(), 200);
+assert(cold.assert_json_schema("{\"type\":\"object\",\"required\":[\"ok\",\"cold_start\",\"invocation\"]}")); assert_eq(cold.json("$.cold_start").value(), "true"); assert_eq(warm.json("$.cold_start").value(), "false"); assert_eq(warm.json("$.invocation").value(), "2");
+let load = curl.load(s.get("/json").proxy(""), 4, 1.0, 16); assert_eq(load.threshold(str_to_float(${P95_THRESHOLD_MS}), 0.0), true);
+file_write("data/s03_lmaws_latency.csv", "metric,ms\ncold start," + str(cold.time("total")) + "\nwarm invoke," + str(warm.time("total")) + "\np95," + str(load.p95_ms()) + "\n");
+end _dsl_
+  savedsl(p, ".lmweblab-local/test.dslb"); let r = system(concat(dsl_cli(p), ["--dsl", ".lmweblab-local/test.dslb"]), 120000); assert(r.code == 0, "scenario 03 lmcurl test failed"); write_file(stop_file, "stop\n");
+}
+serve_fixture(); run_contract();
+let draw = _dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
+scene.canvas(900, 320, "#0f172a"); scene.text(28.0, 42.0, 20.0, "Scenario 03: Lambda Function URL", "#f8fafc");
+let a = scene.box(70.0, 140.0, 180.0, 70.0, "Route 53 Alias", "#1e293b", "#38bdf8", 8.0, 14.0);
+let b = scene.box(360.0, 140.0, 180.0, 70.0, "CloudFront", "#1e293b", "#818cf8", 8.0, 14.0);
+let c = scene.box(650.0, 140.0, 180.0, 70.0, "Lambda URL", "#1e293b", "#fbbf24", 8.0, 14.0);
+scene.connector(a,"e",b,"w","straight","none","arrow","none","#38bdf8",2.0,"",0.5,0.0,0.0); scene.connector(b,"e",c,"w","straight","none","arrow","none","#fbbf24",2.0,"",0.5,0.0,0.0); scene.render_png("images/s03_lmaws_architecture.png",900,320,1);
+end _dsl_
+savedsl(draw, ".lmweblab-local/draw.dslb"); assert(system(concat(dsl_cli(draw), ["--dsl", ".lmweblab-local/draw.dslb"]), 120000).code == 0);
+let plot = _dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
+plot.png("images/s03_lmaws_latency.png",860,480); plot.cmd("set datafile separator ','; set title 'Scenario 03 latency (ms)'; set style data histograms; set style fill solid; unset key; set grid y"); plot.cmd("plot 'data/s03_lmaws_latency.csv' every ::1 using 2:xtic(1) lc rgb '#fbbf24'"); plot.close();
+end _dsl_
+savedsl(plot, ".lmweblab-local/plot.dslb"); assert(system(concat(dsl_cli(plot), ["--dsl", ".lmweblab-local/plot.dslb"]), 120000).code == 0);
+println("PASS scenario 03 test; endpoint=" + endpoint); println("estimated cost: $0.0000");

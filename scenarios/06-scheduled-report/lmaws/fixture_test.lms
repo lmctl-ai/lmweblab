@@ -1,0 +1,30 @@
+# === CONFIG ===
+let REQUEST_TIMEOUT_MS=5000; let RUNS_REQUIRED=2;
+# === END CONFIG ===
+assert(!contains(ARGV,"--live")&&getenv("LMWEBLAB_LIVE","0")!="1", "live mode is pending the Lambda role grant");
+assert(file_exists(".lmweblab-local/state.json"));
+mkdir("images"); mkdir("data");
+let token=str(now()); let ready_file=".lmweblab-local/s06-ready-"+token+".txt"; let stop_file=".lmweblab-local/s06-stop-"+token;
+fn serve_fixture(){system(["python3","../../lib/lambda_fixture_spawn.py","06",ready_file,stop_file],120000);}
+fn run_contract(){for(i in range(0,200)){if(file_exists(ready_file)){break;}sleep_ms(10);}assert(file_exists(ready_file));let base=trim(read_file(ready_file));
+let p=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let s=curl.session(${base}); let one=s.get("/fixture/tick").proxy("").timeout(${REQUEST_TIMEOUT_MS}).send(); let two=s.get("/fixture/tick").proxy("").timeout(${REQUEST_TIMEOUT_MS}).retry(3,100).send(); assert_eq(one.status(),200); assert_eq(two.status(),200); assert(one.assert_json_schema("{\"type\":\"object\",\"required\":[\"ok\",\"scheduled_runs\",\"latest_iso\"]}")); assert_eq(one.json("$.scheduled_runs").value(),"1"); assert_eq(two.json("$.scheduled_runs").value(),"2"); file_write("data/s06_lmaws_runs.csv","run,status\n1,1\n2,1\n");
+end _dsl_
+savedsl(p,".lmweblab-local/test.dslb");let r=system(concat(dsl_cli(p),["--dsl",".lmweblab-local/test.dslb"]),120000);assert(r.code==0,"scenario 06 lmcurl test failed");write_file(stop_file,"stop\n");}
+serve_fixture(); run_contract();
+let draw=_dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
+scene.canvas(900,320,"#0f172a");
+scene.text(28.0,42.0,20.0,"Scenario 06: EventBridge -> Lambda report","#f8fafc");
+let a=scene.box(60.0,140.0,200.0,70.0,"EventBridge rate(1 minute)","#1e293b","#38bdf8",8.0,14.0); let b=scene.box(350.0,140.0,190.0,70.0,"Lambda reporter","#1e293b","#fbbf24",8.0,14.0); let c=scene.box(640.0,140.0,200.0,70.0,"S3 + DynamoDB","#1e293b","#4ade80",8.0,14.0);
+scene.connector(a,"e",b,"w","straight","none","arrow","none","#fbbf24",2.0,"trigger",0.5,0.0,0.0);
+scene.connector(b,"e",c,"w","straight","none","arrow","none","#4ade80",2.0,"write",0.5,0.0,0.0);
+scene.render_png("images/s06_lmaws_architecture.png",900,320,1);
+end _dsl_
+savedsl(draw,".lmweblab-local/draw.dslb"); assert(system(concat(dsl_cli(draw),["--dsl",".lmweblab-local/draw.dslb"]),120000).code==0);
+let plot=_dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
+plot.png("images/s06_lmaws_runs.png",860,480);
+plot.cmd("set datafile separator ','; set title 'Scenario 06 scheduled runs'; set style data histograms; unset key; set grid y");
+plot.cmd("plot 'data/s06_lmaws_runs.csv' every ::1 using 2:xtic(1) lc rgb '#4ade80'");
+plot.close();
+end _dsl_
+savedsl(plot,".lmweblab-local/plot.dslb"); assert(system(concat(dsl_cli(plot),["--dsl",".lmweblab-local/plot.dslb"]),120000).code==0); println("PASS scenario 06 test; report polling and schema asserted"); println("estimated cost: $0.0000");

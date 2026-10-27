@@ -1,31 +1,20 @@
 # === CONFIG ===
-let REQUEST_TIMEOUT_MS=5000; let P95_THRESHOLD_MS="2000.0";
+let REGION = "us-east-1";
+let DOMAIN = getenv("LMWEBLAB_DOMAIN", "example.com");
+let NAME_PREFIX = "lmaws";
+let SLUG = "s04";
+let ROLE = "lmaws_lambda_exec";
+let RUNTIME = "python3.12";
+let HANDLER = "guestbook.handler";
+let SOURCE_FILE = "assets/guestbook.py";
+let MEMORY_MB = 128;
+let TIMEOUT_S = 10;
+let TTL_SECONDS = 3600;
+let SCHEDULE = "rate(1 minute)";
+let REQUEST_TIMEOUT_MS = 10000;
+let LOAD_SAMPLES = 16;
+let P95_LIMIT_MS = "2000.0";
+let COST_CAP_USD = "0.05";
 # === END CONFIG ===
-assert(!contains(ARGV,"--live")&&getenv("LMWEBLAB_LIVE","0")!="1", "live mode is pending the Lambda role grant");
-assert(file_exists(".lmweblab-local/state.json"));
-mkdir("images"); mkdir("data");
-let token=str(now()); let ready_file=".lmweblab-local/s04-ready-"+token+".txt"; let stop_file=".lmweblab-local/s04-stop-"+token;
-fn serve_fixture(){system(["python3","../../lib/lambda_fixture_spawn.py","04",ready_file,stop_file],120000);}
-fn run_contract(){for(i in range(0,200)){if(file_exists(ready_file)){break;}sleep_ms(10);}assert(file_exists(ready_file));let base=trim(read_file(ready_file));
-let p=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
-let s=curl.session(${base}); let post=s.post("/entries").body("{\"author\":\"A\",\"message\":\"<script>alert(1)</script>\"}").proxy("").timeout(${REQUEST_TIMEOUT_MS}).send(); let post2=s.post("/entries").body("{\"author\":\"B\",\"message\":\"second\"}").proxy("").timeout(${REQUEST_TIMEOUT_MS}).send(); assert_eq(post.status(),201); assert_eq(post2.status(),201); assert(post.assert_json_schema("{\"type\":\"object\",\"required\":[\"ok\",\"entry\"]}"));
-let page=s.get("/entries?limit=1").proxy("").timeout(${REQUEST_TIMEOUT_MS}).send(); assert_eq(page.status(),200); assert_eq(page.json("$.total").value(),"1"); let first_message=page.json("$.items[0].message").value(); assert(page.json("$.items[0].expires_at").value()!=""); let cursor=page.json("$.next_cursor").value(); assert(cursor!=""); let page2=s.get("/entries?limit=1&cursor="+cursor).proxy("").timeout(${REQUEST_TIMEOUT_MS}).send(); let second_message=page2.json("$.items[0].message").value(); assert((first_message=="&lt;script&gt;alert(1)&lt;/script&gt;"&&second_message=="second")||(second_message=="&lt;script&gt;alert(1)&lt;/script&gt;"&&first_message=="second"));
-let load=curl.load(s.get("/entries?limit=1").proxy(""),4,1.0,16); assert_eq(load.threshold(str_to_float(${P95_THRESHOLD_MS}),0.0),true); file_write("data/s04_lmaws_latency.csv","metric,ms\npost,"+str(post.time("total"))+"\nget p95,"+str(load.p95_ms())+"\n");
-end _dsl_
-savedsl(p,".lmweblab-local/test.dslb");let r=system(concat(dsl_cli(p),["--dsl",".lmweblab-local/test.dslb"]),120000);assert(r.code==0,"scenario 04 lmcurl test failed");write_file(stop_file,"stop\n");}
-serve_fixture(); run_contract();
-let draw=_dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
-scene.canvas(900,320,"#0f172a");
-scene.text(28.0,42.0,20.0,"Scenario 04: Lambda + DynamoDB Guestbook","#f8fafc");
-let a=scene.box(90.0,140.0,200.0,70.0,"Function URL","#1e293b","#38bdf8",8.0,14.0); let b=scene.box(610.0,140.0,200.0,70.0,"DynamoDB TTL table","#1e293b","#fbbf24",8.0,14.0);
-scene.connector(a,"e",b,"w","straight","none","arrow","none","#fbbf24",2.0,"entries",0.5,0.0,0.0);
-scene.render_png("images/s04_lmaws_architecture.png",900,320,1);
-end _dsl_
-savedsl(draw,".lmweblab-local/draw.dslb"); assert(system(concat(dsl_cli(draw),["--dsl",".lmweblab-local/draw.dslb"]),120000).code==0);
-let plot=_dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
-plot.png("images/s04_lmaws_latency.png",860,480);
-plot.cmd("set datafile separator ','; set title 'Scenario 04 latency (ms)'; set style data histograms; unset key; set grid y");
-plot.cmd("plot 'data/s04_lmaws_latency.csv' every ::1 using 2:xtic(1) lc rgb '#38bdf8'");
-plot.close();
-end _dsl_
-savedsl(plot,".lmweblab-local/plot.dslb"); assert(system(concat(dsl_cli(plot),["--dsl",".lmweblab-local/plot.dslb"]),120000).code==0); println("PASS scenario 04 test; pagination and HTML escaping asserted"); println("estimated cost: $0.0000");
+import "../../lib/serverless.lms";
+sv_run("04","test",{region:REGION,domain:DOMAIN,prefix:NAME_PREFIX,slug:SLUG,role:ROLE,runtime:RUNTIME,handler:HANDLER,source_file:SOURCE_FILE,memory_mb:MEMORY_MB,timeout_s:TIMEOUT_S,ttl_seconds:TTL_SECONDS,schedule:SCHEDULE,timeout_ms:REQUEST_TIMEOUT_MS,samples:LOAD_SAMPLES,p95_ms:P95_LIMIT_MS,cap:COST_CAP_USD},ARGV);

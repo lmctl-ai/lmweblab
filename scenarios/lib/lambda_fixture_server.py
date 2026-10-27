@@ -56,13 +56,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802
         parsed = urlparse(self.path)
+        if scenario == "06" and parsed.path == "/fixture/tick":
+            result=module.handler({"source":"aws.events"},None)
+            self._send(result["statusCode"],result["body"],extra=result.get("headers"));return
         if scenario == "05" and parsed.path == "/":
-            self._send(200, "<html><body><h1>lmweblab static fixture</h1></body></html>", "text/html; charset=utf-8")
+            self._send(200, "<html><body><h1>lmweblab static fixture</h1></body></html>", "text/html; charset=utf-8", {"Cache-Control":"public,max-age=30"})
             return
         if scenario == "05":
             event = {"rawPath": parsed.path, "queryStringParameters": {k: v[-1] for k, v in parse_qs(parsed.query).items()}}
         elif scenario == "04":
             event = {"requestContext": {"http": {"method": "GET"}}, "queryStringParameters": {k: v[-1] for k, v in parse_qs(parsed.query).items()}}
+        elif scenario == "06":
+            event = {"rawPath":parsed.path,"requestContext":{"http":{"method":"GET"}}}
         else:
             event = {}
         result = module.handler(event, None)

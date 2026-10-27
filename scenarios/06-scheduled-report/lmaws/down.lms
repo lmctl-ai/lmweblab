@@ -1,11 +1,20 @@
 # === CONFIG ===
 let REGION = "us-east-1";
+let DOMAIN = getenv("LMWEBLAB_DOMAIN", "example.com");
+let NAME_PREFIX = "lmaws";
+let SLUG = "s06";
+let ROLE = "lmaws_lambda_exec";
+let RUNTIME = "python3.12";
+let HANDLER = "reporter.handler";
+let SOURCE_FILE = "assets/reporter.py";
+let MEMORY_MB = 128;
+let TIMEOUT_S = 10;
+let TTL_SECONDS = 3600;
+let SCHEDULE = "rate(1 minute)";
+let REQUEST_TIMEOUT_MS = 10000;
+let LOAD_SAMPLES = 16;
+let P95_LIMIT_MS = "2000.0";
+let COST_CAP_USD = "0.05";
 # === END CONFIG ===
-assert(!contains(ARGV,"--live")&&getenv("LMWEBLAB_LIVE","0")!="1", "live mode is pending the Lambda role grant");
-assert(file_exists(".lmweblab-local/state.json")); let st=json_parse(read_file(".lmweblab-local/state.json"));
-let web_state=".lmweblab-local/web-"+get(st,"run_id","")+".json"; let serverless_state=".lmweblab-local/serverless-"+get(st,"run_id","")+".json";
-let recorded_domain=json_parse(read_file(serverless_state)).domain;
-let p=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
-let cloud=aws.demo(); let serverless=cloud.serverless_stack(${get(st,"run_id","")},${recorded_domain},${serverless_state}); let gone=serverless.down(); check(serverless.leftovers().len()==0); file_write(".lmweblab-local/down.json",gone.json());
-end _dsl_
-savedsl(p,".lmweblab-local/down.dslb"); assert(system(concat(dsl_cli(p),["--dry-run","--dsl",".lmweblab-local/down.dslb"]),120000).code==0); println("PASS scenario 06 down; leftovers=0"); println("estimated cost: $0.0000");
+import "../../lib/serverless.lms";
+sv_run("06","down",{region:REGION,domain:DOMAIN,prefix:NAME_PREFIX,slug:SLUG,role:ROLE,runtime:RUNTIME,handler:HANDLER,source_file:SOURCE_FILE,memory_mb:MEMORY_MB,timeout_s:TIMEOUT_S,ttl_seconds:TTL_SECONDS,schedule:SCHEDULE,timeout_ms:REQUEST_TIMEOUT_MS,samples:LOAD_SAMPLES,p95_ms:P95_LIMIT_MS,cap:COST_CAP_USD},ARGV);

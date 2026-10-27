@@ -1,16 +1,20 @@
 # === CONFIG ===
 let REGION = "us-east-1";
 let DOMAIN = getenv("LMWEBLAB_DOMAIN", "example.com");
+let NAME_PREFIX = "lmaws";
+let SLUG = "s04";
+let ROLE = "lmaws_lambda_exec";
+let RUNTIME = "python3.12";
+let HANDLER = "guestbook.handler";
+let SOURCE_FILE = "assets/guestbook.py";
+let MEMORY_MB = 128;
+let TIMEOUT_S = 10;
+let TTL_SECONDS = 3600;
+let SCHEDULE = "rate(1 minute)";
+let REQUEST_TIMEOUT_MS = 10000;
+let LOAD_SAMPLES = 16;
+let P95_LIMIT_MS = "2000.0";
+let COST_CAP_USD = "0.05";
 # === END CONFIG ===
-assert(!contains(ARGV,"--live")&&getenv("LMWEBLAB_LIVE","0")!="1", "live serverless rollout awaits authorization");
-assert(file_exists(".lmweblab-local/state.json"),"run up first");
-let metadata=json_parse(read_file(".lmweblab-local/state.json"));let run_id=metadata.run_id;
-let serverless_path=".lmweblab-local/serverless-"+run_id+".json";
-let domain=json_parse(read_file(serverless_path)).domain;
-let program=_dsl_ cli="lmaws" install="github:lmctl-ai/lmaws@latest";
-let cloud=aws.demo();let run=cloud.serverless_stack(${run_id},${domain},${serverless_path});
-file_write(".lmweblab-local/status.json",run.status().json());
-end _dsl_
-savedsl(program,".lmweblab-local/status.dslb");
-let result=system(concat(dsl_cli(program),["--dry-run","--dsl",".lmweblab-local/status.dslb"]),120000);assert(result.code==0,"status query failed");
-println(read_file(".lmweblab-local/status.json"));println("estimated cost: $0.00");
+import "../../lib/serverless.lms";
+sv_run("04","status",{region:REGION,domain:DOMAIN,prefix:NAME_PREFIX,slug:SLUG,role:ROLE,runtime:RUNTIME,handler:HANDLER,source_file:SOURCE_FILE,memory_mb:MEMORY_MB,timeout_s:TIMEOUT_S,ttl_seconds:TTL_SECONDS,schedule:SCHEDULE,timeout_ms:REQUEST_TIMEOUT_MS,samples:LOAD_SAMPLES,p95_ms:P95_LIMIT_MS,cap:COST_CAP_USD},ARGV);

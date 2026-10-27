@@ -28,7 +28,7 @@ let first = s.get("/").proxy("").timeout(timeout_ms).retry(5, 1000).send();
 let warm = s.get("/").proxy("").timeout(timeout_ms).retry(5, 1000).send();
 assert(first.status() >= 200 && first.status() < 500);
 assert(warm.status() >= 200 && warm.status() < 500);
-let cold_first = "";let cold_warm = "";
+let cold_first = first.header("x-lmweblab-cold-start");let cold_warm = warm.header("x-lmweblab-cold-start");
 if (${get(o, "number", "") } == "03") { cold_first = first.json("$.cold_start").value();cold_warm = warm.json("$.cold_start").value(); }
 file_write(${output}, "{\"first_status\":" + str(first.status()) + ",\"warm_status\":" + str(warm.status()) + ",\"first_ms\":" + str(first.time("total")) + ",\"warm_ms\":" + str(warm.time("total")) + ",\"first_cold\":\"" + cold_first + "\",\"warm_cold\":\"" + cold_warm + "\"}\n");
 end _dsl_
@@ -45,6 +45,7 @@ fn sl_http_test(o, meta) {
   let p95_ms = get(o, "p95_ms", "2000.0");
   let samples = get(o, "samples", 16);
   let output = sl_private_path(o, "http");
+  if(number=="06"){sl_wait_reports(o,meta);}
   let p = _dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
 let lambda_url = ${get(meta, "lambda_url", "")};
 let cf_url = ${get(meta, "cf_url", "")};
@@ -61,31 +62,57 @@ metrics = metrics + ",\"first_ms\":" + str(first.time("total")) + ",\"warm_ms\":
 if (${number} == "03") {
   assert_eq(first.status(), 200);assert_eq(warm.status(), 200);
   assert(warm.assert_json_schema("{\"type\":\"object\",\"required\":[\"ok\",\"run_id\",\"cold_start\",\"invocation\"]}"));
-  let load = curl.load(s.get("/").proxy("").timeout(timeout_ms), 4, 1.0, samples);assert_eq(load.threshold(p95_limit, 0.0), true);
+  assert(cf_url!=""&&site_url!="");
+  let cf=curl.session(cf_url).get("/?name=cloudfront").proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(cf.status(),200);assert_eq(cf.json("$.run_id").value(),${o.run_id});
+  let alias=curl.session(site_url).get("/?name=alias").proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(alias.status(),200);assert_eq(alias.json("$.run_id").value(),${o.run_id});
+  let load = curl.load(curl.session(cf_url).get("/").proxy("").timeout(timeout_ms), 4, 1.0, samples);assert_eq(load.threshold(p95_limit, 0.0), true);
   metrics = metrics + ",\"p95_ms\":" + str(load.p95_ms());
 } else if (${number} == "04") {
-  let a = s.post("/entries").json("{\"author\":\"live-a\",\"message\":\"<script>alert(1)</script>\"}").proxy("").timeout(timeout_ms).retry(5,1000).send();
-  let b = s.post("/entries").json("{\"author\":\"live-b\",\"message\":\"second\"}").proxy("").timeout(timeout_ms).retry(5,1000).send();
+  let a = s.post("/entries").json("{\"author\":\"live-a\",\"message\":\"<script>alert(1)</script>\"}").proxy("").timeout(timeout_ms).send();
+  let b = s.post("/entries").json("{\"author\":\"live-b\",\"message\":\"second\"}").proxy("").timeout(timeout_ms).send();
   assert_eq(a.status(), 201);assert_eq(b.status(), 201);
   let page = s.get("/entries?limit=1").proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(page.status(),200);assert(page.json("$.next_cursor").value() != "");assert(page.json("$.items[0].expires_at").value() != "");
   let next = s.get("/entries?limit=1&cursor=" + page.json("$.next_cursor").value()).proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(next.status(),200);
+  let message1=page.json("$.items[0].message").value();let message2=next.json("$.items[0].message").value();
+  assert((message1=="&lt;script&gt;alert(1)&lt;/script&gt;"&&message2=="second")||(message2=="&lt;script&gt;alert(1)&lt;/script&gt;"&&message1=="second"));
+  assert(page.json("$.items[0].id").value()!=next.json("$.items[0].id").value());
+  let invalid=s.post("/entries").body("[]").proxy("").timeout(timeout_ms).send();assert_eq(invalid.status(),400);
+  let huge=s.post("/entries").body(str_repeat("x",9000)).proxy("").timeout(timeout_ms).send();assert_eq(huge.status(),413);
   let load = curl.load(s.get("/entries?limit=1").proxy(""), 4, 1.0, samples);assert_eq(load.threshold(p95_limit, 0.0), true);metrics = metrics + ",\"p95_ms\":" + str(load.p95_ms());
 } else if (${number} == "05") {
   assert(cf_url != "");let page = curl.session(cf_url).get("/").proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(page.status(),200);
-  let api = curl.session(cf_url).get("/api/info?probe=live").proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(api.status(),200);assert(api.assert_json_schema("{\"type\":\"object\",\"required\":[\"ok\",\"path\",\"query\"]}"));assert_eq(api.json("$.path").value(),"/api/info");assert(api.header("cache-control") != "");
+  let api = curl.session(cf_url).get("/api/info?probe=live").proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(api.status(),200);assert(api.assert_json_schema("{\"type\":\"object\",\"required\":[\"ok\",\"path\",\"query\"]}"));assert_eq(api.json("$.path").value(),"/api/info");assert(api.header("cache-control") != "");assert(page.header("cache-control")!="");assert_eq(api.json("$.query.probe").value(),"live");
   let alias = curl.session(site_url).get("/").proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(alias.status(),200);
   assert(api.header("cache-control") == "no-store");assert(api.header("access-control-allow-origin") == "");
   assert(str_contains(api.body(), "probe"));
-  let load = curl.load(s.get("/api/info").proxy(""), 4, 1.0, samples);assert_eq(load.threshold(p95_limit, 0.0), true);metrics = metrics + ",\"p95_ms\":" + str(load.p95_ms());
+  let load = curl.load(curl.session(cf_url).get("/api/info").proxy(""), 4, 1.0, samples);assert_eq(load.threshold(p95_limit, 0.0), true);metrics = metrics + ",\"p95_ms\":" + str(load.p95_ms());
 } else if (${number} == "06") {
   let report = s.get("/report.json").proxy("").timeout(timeout_ms).retry(5,1000).send();assert(report.status() == 200 || report.status() == 404);
   if (report.status() == 200) { assert(report.assert_json_schema("{\"type\":\"object\",\"required\":[\"ok\",\"scheduled_runs\",\"latest_iso\"]}")); }
-  let checks = 0;let previous = -1;
-  while (checks < 8 && previous < 2) { let current = s.get("/report.json").proxy("").timeout(timeout_ms).retry(5,1000).send();if (current.status() == 200) { previous = current.json("$.scheduled_runs").to_int(); } if (previous < 2) { checks = checks + 1; } }
-  assert(previous >= 2);let unchanged = s.get("/report.json").proxy("").timeout(timeout_ms).retry(5,1000).send();assert_eq(unchanged.json("$.scheduled_runs").to_int(), previous);
+  let previous=report.json("$.scheduled_runs").to_int();assert(previous>=2);
+  let unchanged=s.get("/report.json").proxy("").timeout(timeout_ms).send();assert(unchanged.json("$.scheduled_runs").to_int()>=previous);
+  let html=s.get("/report.html").proxy("").timeout(timeout_ms).send();assert_eq(html.status(),200);assert(str_contains(html.header("content-type"),"text/html"));assert(str_contains(html.body(),"scheduled_runs"));
+  let load=curl.load(s.get("/report.json").proxy("").timeout(timeout_ms),4,1.0,samples);assert_eq(load.threshold(p95_limit,0.0),true);
+  metrics=metrics+",\"scheduled_runs\":"+str(previous)+",\"p95_ms\":"+str(load.p95_ms());
 }
 metrics = metrics + "}\n";file_write(${output}, metrics);
 end _dsl_
   sl_exec(p, o, "http", 900000);
   return json_parse(read_file(output));
+}
+
+fn sl_wait_reports(o,meta){
+  let output=sl_private_path(o,"schedule-poll");let done=false;let count=0;
+  while(!done&&count<24){
+    count=count+1;
+    let probe=_dsl_ cli="lmcurl" install="github:lmctl-ai/lmcurl@latest";
+let r=curl.session(${meta.lambda_url}).get("/report.json").proxy("").timeout(${o.timeout_ms}).retry(1,500).send();
+assert(r.status()==200||r.status()==404);let n=0;if(r.status()==200){n=r.json("$.scheduled_runs").to_int();}
+file_write(${output},"{\"scheduled_runs\":"+str(n)+"}");
+end _dsl_
+    sl_exec(probe,o,"schedule-poll",30000);
+    done=json_parse(read_file(output)).scheduled_runs>=2;
+    if(!done){sleep_ms(10000);}
+  }
+  assert(done,"two EventBridge reports were not observed within bounded polling");
 }
