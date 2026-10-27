@@ -10,7 +10,7 @@ def handler(event, context=None):
         except (TypeError, ValueError): payload={}
         if payload.get("task") == "poison": failures.append({"itemIdentifier":mid}); continue
         if not mid: continue
-        if table.get_item(Key={"pk":mid}).get("Item"): continue
+        if table.get_item(Key={"pk":mid}, ConsistentRead=True).get("Item"): continue
         try:
             table.put_item(Item={"pk":mid,"task":str(payload.get("task", "")),"run_id":os.getenv("RUN_ID",os.getenv("LMWEBLAB_RUN_ID","fixture")),"status":"processed"}, ConditionExpression="attribute_not_exists(pk)")
         except Exception as exc:

@@ -16,6 +16,7 @@ class HandlerTests(unittest.TestCase):
         os.environ.update({"LMWEBLAB_DEMO_PASSWORD":"correct-horse","TABLE_NAME":"lmaws_test","TTL_SECONDS":"10","RUN_ID":"test"})
         self.login=load("scenarios/08-session-login-demo/lmaws/assets/session_login.py","login_test")
         self.short=load("scenarios/09-url-shortener/lmaws/assets/url_shortener.py","short_test")
+        self.api=load("scenarios/07-sqs-worker/lmaws/assets/api.py","api_test")
         self.worker=load("scenarios/07-sqs-worker/lmaws/assets/worker.py","worker_test")
     def test_login_fail_closed_and_token(self):
         def call(body): return self.login.handler({"rawPath":"/login","requestContext":{"http":{"method":"POST"}},"body":json.dumps(body)})
@@ -53,6 +54,17 @@ class HandlerTests(unittest.TestCase):
     def test_shortener_rejects_invalid_redirect_status(self):
         r=self.short.handler({"rawPath":"/links","requestContext":{"http":{"method":"POST"}},"body":"{\"code\":\"status\",\"target\":\"https://example.com/status\",\"status\":307}"})
         self.assertEqual(r["statusCode"], 400)
+    def test_worker_is_idempotent_and_poison_is_not_stored(self):
+        event={"Records":[{"messageId":"one","body":"{\"task\":\"report\"}"}]}
+        self.assertEqual(self.worker.handler(event)["processed"],1)
+        self.assertEqual(self.worker.handler(event)["processed"],0)
+        poison=self.worker.handler({"Records":[{"messageId":"bad","body":"{\"task\":\"poison\"}"}]})
+        self.assertEqual(poison["batchItemFailures"],[{"itemIdentifier":"bad"}])
+        self.assertEqual(len(self.fake.Table("lmaws_test").rows),1)
+    def test_api_does_not_enqueue_unknown_post_path(self):
+        r=self.api.handler({"rawPath":"/unexpected","requestContext":{"http":{"method":"POST"}},"body":"{\"task\":\"report\"}"})
+        self.assertEqual(r["statusCode"],404)
+
     def test_worker_does_not_swallow_store_error(self):
         class Broken:
             def get_item(self, **_): return {}

@@ -87,7 +87,7 @@ fn rw_run(number,action,config,argv) {
     else if(argv[i]=="--run-id"){i=i+1;o.run_id=argv[i];}i=i+1;
   }
   assert(!o.live||action=="down"||action=="status"||getenv("LMWEBLAB_REMAINING_LIVE_GO","")=="1","Live runs await the Lead go after scenarios 03–06");
-  assert(!o.live||action=="down"||action=="status"||o.number!="07","scenario 07 live execution is not authorized yet");
+  assert(!o.live||action=="down"||action=="status"||o.number!="07"||getenv("LMWEBLAB_WORKER_LIVE_GO","")=="1","scenario 07 requires its separate live authorization flag");
   assert(!o.live||getenv("AWS_PROFILE","")=="lmaws","live profile must be lmaws");
   assert(!o.live||getenv("LMAWS_ENDPOINT","")=="","live must not use a fake transport");
   assert(!o.live||o.run_id!="cafe"+number,"live runs require a fresh explicit --run-id");
