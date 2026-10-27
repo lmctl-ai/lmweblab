@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import types
+from decimal import Decimal
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -43,10 +44,11 @@ def main() -> None:
     class FakeS3Client:
         def put_object(self, **kwargs): self.last = kwargs
 
-    fake_boto3 = types.SimpleNamespace(resource=lambda _name: FakeDynamo(), client=lambda _name: FakeS3Client())
+    dynamo = FakeDynamo()
+    fake_boto3 = types.SimpleNamespace(resource=lambda _name: dynamo, client=lambda _name: FakeS3Client())
     sys.modules["boto3"] = fake_boto3
-    guest = load(ROOT / "04-lambda-dynamodb-guestbook/lmaws/assets/guestbook.py", "guestbook")
     os.environ["TABLE_NAME"] = "lmaws_s04_fixture"
+    guest = load(ROOT / "04-lambda-dynamodb-guestbook/lmaws/assets/guestbook.py", "guestbook")
     first = guest.handler({"requestContext": {"http": {"method": "POST"}}, "body": json.dumps({"author": "A <b>", "message": "<script>alert(1)</script>"})}, None)
     assert first["statusCode"] == 201
     body = json.loads(first["body"])
@@ -57,6 +59,11 @@ def main() -> None:
     assert page["statusCode"] == 200 and page_body["total"] == 1 and page_body["next_cursor"]
     second_page = guest.handler({"requestContext": {"http": {"method": "GET"}}, "queryStringParameters": {"limit": "1", "cursor": page_body["next_cursor"]}}, None)
     assert json.loads(second_page["body"])["items"][0]["message"] == "second"
+    # DynamoDB returns Decimal values and can retain expired items until its
+    # background TTL sweep. The handler filters these rows before serializing.
+    rows.append({"pk": "expired", "id": "expired", "message": "old", "expires_at": Decimal("1")})
+    live_page = json.loads(guest.handler({"requestContext": {"http": {"method": "GET"}}, "queryStringParameters": {"limit": "10"}}, None)["body"])
+    assert all(item["id"] != "expired" for item in live_page["items"])
 
     api = load(ROOT / "05-static-plus-api/lmaws/assets/api.py", "api")
     response = api.handler({"rawPath": "/api/info", "queryStringParameters": {"q": "fixture"}}, None)
