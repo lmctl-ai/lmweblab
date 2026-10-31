@@ -30,7 +30,7 @@ let st = str_trim(tofu.state_list(dir));
 file_write(".lmweblab-local/status-state-list.txt", st);
 end _lmcode_
 
-state_dslb = ".lmweblab-local/lmcloud-status-state.dslb";
+
 
 r_st = run_lmcode(state_prog);
 assert(r_st.ok, "lmcode host failed");
