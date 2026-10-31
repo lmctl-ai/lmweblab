@@ -82,7 +82,7 @@ if (!live) {
 end _dsl_
   let dslb = path_join(state_dir, "test.dslb");
   savedsl(p, dslb);
-  let r = system(concat(dsl_cli(p), ["--dsl", dslb]), 60000);
+  let r = system(concat(dsl_cli(p), ["--lmcode", dslb]), 60000);
   assert(r.code == 0, "scenario 03 offline test failed: " + r.stderr);
 } else {
   assert(fn_url != "" && cf_domain != "", "Live test requires function_url and distribution_domain_name in stack.json");
@@ -152,7 +152,7 @@ end _dsl_
 end _dsl_
   let dslb = path_join(state_dir, "test-live.dslb");
   savedsl(p, dslb);
-  let r = system(concat(dsl_cli(p), ["--dsl", dslb]), 180000);
+  let r = system(concat(dsl_cli(p), ["--lmcode", dslb]), 180000);
   if (r.code != 0) { println(r.stderr); }
   assert(r.code == 0, "scenario 03 live test failed: " + r.stderr);
 }
@@ -177,7 +177,7 @@ scene.render_png(out_png, 920, 360, 1);
 end _dsl_
 let arch_dslb = path_join(state_dir, "arch.dslb");
 savedsl(arch, arch_dslb);
-assert(system(concat(dsl_cli(arch), ["--dsl", arch_dslb]), 60000).code == 0);
+assert(system(concat(dsl_cli(arch), ["--lmcode", arch_dslb]), 60000).code == 0);
 
 let plot = _dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
 plot.png(${plot_img}, 860, 480);
@@ -190,7 +190,7 @@ plot.close();
 end _dsl_
 let plot_dslb = path_join(state_dir, "plot.dslb");
 savedsl(plot, plot_dslb);
-assert(system(concat(dsl_cli(plot), ["--dsl", plot_dslb]), 60000).code == 0);
+assert(system(concat(dsl_cli(plot), ["--lmcode", plot_dslb]), 60000).code == 0);
 
 if (stack_dir != ".") {
   mkdir(path_join(stack_dir, "images"));

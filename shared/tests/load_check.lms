@@ -17,6 +17,6 @@ mock.stop();
 println("load check passed; p95 ms="+str(load.p95_ms()));
 end _dsl_
 savedsl(p,".lmweblab-load.dslb");
-r = system ${dsl_cli(p)} --dsl .lmweblab-load.dslb;
+r = system ${dsl_cli(p)} --lmcode .lmweblab-load.dslb;
 if(r.code!=0){mkdir(".lmweblab-local");write_file(".lmweblab-local/load_check-error.log",r.stdout+"\n"+r.stderr);println(r.stdout);println(r.stderr);}
 assert(r.code==0);

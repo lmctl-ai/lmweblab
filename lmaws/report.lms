@@ -18,7 +18,7 @@ scene.connector(curl, "w", ec2, "e", "straight", "none", "arrow", "none", "#f472
 scene.render_png("images/lmaws_architecture.png", 900, 420, 1);
 end _dsl_
 savedsl(draw, ".lmweblab-local/lmaws-report-draw.dslb");
-let dr = system(concat(dsl_cli(draw), ["--dsl", ".lmweblab-local/lmaws-report-draw.dslb"]), 120000);
+let dr = system(concat(dsl_cli(draw), ["--lmcode", ".lmweblab-local/lmaws-report-draw.dslb"]), 120000);
 assert(dr.code == 0, "architecture rendering failed");
 
 write_file("reports/lmaws-timings.dat", "DNS_boot 2.4\nHTTP_suite 1.1\nteardown 0.8\n");
@@ -37,7 +37,7 @@ plot.cmd("plot 'reports/lmaws-timings.dat' using 2:xtic(1) lc rgb '#38bdf8' noti
 plot.close();
 end _dsl_
 savedsl(plot, ".lmweblab-local/lmaws-report-plot.dslb");
-let pr = system(concat(dsl_cli(plot), ["--dsl", ".lmweblab-local/lmaws-report-plot.dslb"]), 120000);
+let pr = system(concat(dsl_cli(plot), ["--lmcode", ".lmweblab-local/lmaws-report-plot.dslb"]), 120000);
 if (pr.code != 0) { println(pr.stderr); assert(false, "latency rendering failed"); }
 write_file("reports/lmaws-synthetic-timings.csv", "phase,seconds\nDNS + boot,2.4\nHTTP suite,1.1\nteardown,0.8\n");
 println("wrote images/lmaws_architecture.png and images/lmaws_latency.png (synthetic only)");

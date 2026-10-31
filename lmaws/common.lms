@@ -52,7 +52,7 @@ fn configure_live(o) {
 # Explicit process settings also work with released lmctl versions predating the set_env fix.
 fn lmaws_execute(program,o,bytecode,limit_ms) {
   let flags=o.live?["--live","--profile","lmaws","--region","us-east-1"]:["--dry-run"];
-  let command=concat(dsl_cli(program),concat(flags,["--dsl",bytecode]));
+  let command=concat(dsl_cli(program),concat(flags,["--lmcode",bytecode]));
   if(getenv("OS","")!="Windows_NT") {
     command=concat(["env","LMAWS_LIVE="+(o.live?"1":"0"),"LMAWS_MAX_COST_USD=0.10","LMAWS_LEDGER_DIR=.lmweblab-local/ledgers","LMAWS_EVIDENCE_DIR=.lmweblab-local/evidence"],command);
   }

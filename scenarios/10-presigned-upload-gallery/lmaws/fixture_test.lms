@@ -15,4 +15,4 @@ let reject=s.post("/presign").body("{\"key\":\"large.png\",\"content_type\":\"im
 let reject_type=s.post("/presign").body("{\"key\":\"bad.png\",\"content_type\":\"text/plain\",\"size\":3}").proxy("").send();assert_eq(reject_type.status(),415);
 let expired=s.get("/__expire").proxy("").send();assert_eq(expired.status(),204);let retry=curl.session(url).put("").body("PNG").header("content-type","image/png").proxy("").send();assert_eq(retry.status(),403);
 end _dsl_
-savedsl(p,".lmweblab-local/upload-test.dslb");let r=system(concat(dsl_cli(p),["--dsl",".lmweblab-local/upload-test.dslb"]),120000);write_file(stop,"done");write_file(".lmweblab-local/upload-test.log",r.stdout+r.stderr);assert(r.code==0,"upload HTTP assertions failed");println("PASS two-phase upload, byte fetch, signed bounds and expiry (synthetic)");
+savedsl(p,".lmweblab-local/upload-test.dslb");let r=system(concat(dsl_cli(p),["--lmcode",".lmweblab-local/upload-test.dslb"]),120000);write_file(stop,"done");write_file(".lmweblab-local/upload-test.log",r.stdout+r.stderr);assert(r.code==0,"upload HTTP assertions failed");println("PASS two-phase upload, byte fetch, signed bounds and expiry (synthetic)");

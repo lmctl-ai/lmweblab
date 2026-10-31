@@ -34,7 +34,7 @@ end _dsl_
   savedsl(probe,".lmweblab-local/readiness.dslb");
   let ready=false;let failed_rounds=0;
   while(!ready && failed_rounds<8) {
-    let attempt=system(concat(dsl_cli(probe),["--dsl",".lmweblab-local/readiness.dslb"]),40000);
+    let attempt=system(concat(dsl_cli(probe),["--lmcode",".lmweblab-local/readiness.dslb"]),40000);
     ready=attempt.code==0;if(!ready){failed_rounds=failed_rounds+1;}
   }
   if(!ready){let recovery=system(["lmctl","lmaws/down.lms","--run-id",o.run_id,"--domain",o.domain,"--live"],1800000);assert(false,"bounded application readiness failed; recovery attempted");}

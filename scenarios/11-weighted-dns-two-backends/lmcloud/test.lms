@@ -87,7 +87,7 @@ print("SHIFT_OK: " + ${ws} + "/" + ${wd});
 end _dsl_
   let dslb = path_join(state_dir, "shift-" + ws + "-" + wd + ".dslb");
   savedsl(p_shift, dslb);
-  let r = system(concat(dsl_cli(p_shift), ["--dsl", dslb]), 600000);
+  let r = system(concat(dsl_cli(p_shift), ["--lmcode", dslb]), 600000);
   println(r.stdout);
   if (r.code != 0) { println(r.stderr); }
   assert(r.code == 0, "Route 53 weight shift to " + ws + "/" + wd + " failed");
@@ -151,7 +151,7 @@ file_write(out_json, res_json);
 end _dsl_
   let dslb = path_join(state_dir, "measure-step-" + step_s + ".dslb");
   savedsl(probe, dslb);
-  let r = system(concat(dsl_cli(probe), ["--dsl", dslb]), 300000);
+  let r = system(concat(dsl_cli(probe), ["--lmcode", dslb]), 300000);
   if (r.code != 0) {
     println(r.stdout);
     println(r.stderr);
@@ -190,7 +190,7 @@ end _dsl_
   let is_ready = false;
   while (attempt < 18 && !is_ready) {
     attempt = attempt + 1;
-    let r_rd = system(concat(dsl_cli(ready_prog), ["--dsl", ready_dslb]), 60000);
+    let r_rd = system(concat(dsl_cli(ready_prog), ["--lmcode", ready_dslb]), 60000);
     if (r_rd.code == 0) { is_ready = true; }
     else { println("waiting for Backend A + Backend B readiness (attempt " + str(attempt) + "/18)..."); }
   }
@@ -264,7 +264,7 @@ m.stop();
 end _dsl_
   let dslb = path_join(state_dir, "test-offline.dslb");
   savedsl(p, dslb);
-  let r = system(concat(dsl_cli(p), ["--dsl", dslb]), 60000);
+  let r = system(concat(dsl_cli(p), ["--lmcode", dslb]), 60000);
   assert(r.code == 0, "scenario 11 offline test failed: " + r.stderr);
 }
 
@@ -299,7 +299,7 @@ scene.render_png(out_png, 960, 460, 1);
 end _dsl_
 let arch_dslb = path_join(state_dir, "arch.dslb");
 savedsl(arch, arch_dslb);
-let r_arch = system(concat(dsl_cli(arch), ["--dsl", arch_dslb]), 60000);
+let r_arch = system(concat(dsl_cli(arch), ["--lmcode", arch_dslb]), 60000);
 assert(r_arch.code == 0, "lmdraw render failed: " + r_arch.stderr);
 
 let plot = _dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
@@ -316,7 +316,7 @@ plot.close();
 end _dsl_
 let plot_dslb = path_join(state_dir, "plot.dslb");
 savedsl(plot, plot_dslb);
-let r_plot = system(concat(dsl_cli(plot), ["--dsl", plot_dslb]), 60000);
+let r_plot = system(concat(dsl_cli(plot), ["--lmcode", plot_dslb]), 60000);
 assert(r_plot.code == 0, "lmplot render failed: " + r_plot.stderr);
 
 if (stack_dir != ".") {

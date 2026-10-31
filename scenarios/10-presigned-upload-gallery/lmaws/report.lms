@@ -11,8 +11,8 @@ scene.connector(a,"e",b,"w","straight","none","arrow","none","#fbbf24",2.0,"PUT"
 scene.connector(b,"e",c,"w","straight","none","arrow","none","#34d399",2.0,"GET",0.5,0.0,0.0);
 scene.render_png("images/s10_lmaws_architecture.png",900,320,1);
 end _dsl_
-savedsl(draw,".lmweblab-local/s10-draw.dslb"); let dr=system(concat(dsl_cli(draw),["--dsl",".lmweblab-local/s10-draw.dslb"]),120000); println(dr.stdout); println(dr.stderr); assert(dr.code==0);
+savedsl(draw,".lmweblab-local/s10-draw.dslb"); let dr=system(concat(dsl_cli(draw),["--lmcode",".lmweblab-local/s10-draw.dslb"]),120000); println(dr.stdout); println(dr.stderr); assert(dr.code==0);
 let plot = _dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
 plot.png("images/s10_lmaws_results.png",860,480); plot.data("R", "valid 200\nwrong_headers 403\noversize 413\nexpired 403\n"); plot.cmd("set title 'Synthetic upload contract results'; set ylabel 'status'; set yrange [0:500]; set style data histograms; set boxwidth 0.6; set style fill solid 0.8; set grid ytics"); plot.cmd("plot $R using 2:xtic(1) lc rgb '#38bdf8' title 'HTTP status'"); plot.close();
 end _dsl_
-savedsl(plot,".lmweblab-local/s10-plot.dslb"); let pr=system(concat(dsl_cli(plot),["--dsl",".lmweblab-local/s10-plot.dslb"]),120000); println(pr.stdout); println(pr.stderr); assert(pr.code==0);
+savedsl(plot,".lmweblab-local/s10-plot.dslb"); let pr=system(concat(dsl_cli(plot),["--lmcode",".lmweblab-local/s10-plot.dslb"]),120000); println(pr.stdout); println(pr.stderr); assert(pr.code==0);

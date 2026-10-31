@@ -116,7 +116,7 @@ end _dsl_
 t_destroy0 = now();
 destroy_dslb = ".lmweblab-local/lmcloud-down.dslb";
 savedsl(destroy_prog, destroy_dslb);
-r_destroy = system(concat(dsl_cli(destroy_prog), ["--dsl", destroy_dslb]), 1500000);
+r_destroy = system(concat(dsl_cli(destroy_prog), ["--lmcode", destroy_dslb]), 1500000);
 destroy_ms = now() - t_destroy0;
 println(r_destroy.stdout);
 if (r_destroy.code != 0) {
@@ -145,7 +145,7 @@ audit_dslb = ".lmweblab-local/lmcloud-audit.dslb";
 savedsl(audit_prog, audit_dslb);
 set_env("LMAWS_LIVE", live ? "1" : "0");
 set_env("LMAWS_MAX_COST_USD", "0.05");
-r_audit = system(concat(dsl_cli(audit_prog), ["--dsl", audit_dslb]), 120000);
+r_audit = system(concat(dsl_cli(audit_prog), ["--lmcode", audit_dslb]), 120000);
 if (r_audit.code != 0) {
   println(r_audit.stderr);
 }

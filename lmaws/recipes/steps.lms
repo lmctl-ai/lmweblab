@@ -18,7 +18,7 @@ end _dsl_
   let code_path=".lmweblab-local/recipe-"+o.run_id+"-"+operation+".dslb";
   savedsl(program,code_path);
   let flags=o.live ? ["--live","--profile","lmaws","--region","us-east-1"]:["--dry-run"];
-  let command=concat(dsl_cli(program),concat(flags,["--dsl",code_path]));
+  let command=concat(dsl_cli(program),concat(flags,["--lmcode",code_path]));
   if(getenv("OS","")!="Windows_NT"){command=concat(["env","LMAWS_MAX_COST_USD=0.10","LMAWS_LEDGER_DIR=.lmweblab-local/ledgers","LMAWS_EVIDENCE_DIR=.lmweblab-local/evidence"],command);}
   let result=system(command,1800000);
   assert(result.code==0,"web recipe failed; native cleanup attempted; inspect private state");

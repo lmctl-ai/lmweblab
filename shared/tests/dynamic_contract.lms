@@ -38,6 +38,6 @@ mock.stop();
 println("dynamic contract passed");
 end _dsl_
 savedsl(p,".lmweblab-dynamic.dslb");
-r = system ${dsl_cli(p)} --dsl .lmweblab-dynamic.dslb;
+r = system ${dsl_cli(p)} --lmcode .lmweblab-dynamic.dslb;
 if(r.code!=0){mkdir(".lmweblab-local");write_file(".lmweblab-local/dynamic_contract-error.log",r.stdout+"\n"+r.stderr);println(r.stdout);println(r.stderr);}
 assert(r.code==0);

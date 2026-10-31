@@ -28,5 +28,5 @@ if(${n}=="07") {
   assert_eq(s.get("/missing").send().status(),404);let again=s.get("/demo").follow(false).send();assert(again.json("$.hits").to_int()>=2);
 }
 end _dsl_
-  savedsl(p,".lmweblab-local/fixture-"+n+"-"+run+".dslb"); let result=system(concat(dsl_cli(p),["--dsl",".lmweblab-local/fixture-"+n+"-"+run+".dslb"]),180000); write_file(".lmweblab-local/fixture-"+n+"-"+run+".log",result.stdout+"\\n"+result.stderr); write_file(stop,"done\\n"); assert(result.code==0,"lmcurl fixture contract failed"); return result;
+  savedsl(p,".lmweblab-local/fixture-"+n+"-"+run+".dslb"); let result=system(concat(dsl_cli(p),["--lmcode",".lmweblab-local/fixture-"+n+"-"+run+".dslb"]),180000); write_file(".lmweblab-local/fixture-"+n+"-"+run+".log",result.stdout+"\\n"+result.stderr); write_file(stop,"done\\n"); assert(result.code==0,"lmcurl fixture contract failed"); return result;
 }

@@ -8,7 +8,7 @@ fn sl_private_path(o, suffix) {
 fn sl_exec(program, o, name, timeout_ms) {
   let bytecode = ".lmweblab-local/serverless-http-" + get(o, "run_id", "run") + "-" + name + ".dslb";
   savedsl(program, bytecode);
-  let command = concat(dsl_cli(program), ["--dsl", bytecode]);
+  let command = concat(dsl_cli(program), ["--lmcode", bytecode]);
   let result = system(command, timeout_ms);
   write_file(".lmweblab-local/serverless-http-" + get(o, "run_id", "run") + "-" + name + ".log", result.stdout + "\n" + result.stderr);
   assert(result.code == 0, "lmcurl contract failed; inspect private " + name + ".log");

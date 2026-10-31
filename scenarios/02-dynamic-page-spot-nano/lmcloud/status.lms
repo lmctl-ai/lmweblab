@@ -18,7 +18,7 @@ end _dsl_
 
 let dslb = path_join(state_dir, "status.dslb");
 savedsl(state_prog, dslb);
-let r = system(concat(dsl_cli(state_prog), ["--dsl", dslb]), 60000);
+let r = system(concat(dsl_cli(state_prog), ["--lmcode", dslb]), 60000);
 assert(r.code == 0);
 let st = trim(read_file(st_file));
 println("scenario: 02-dynamic-page-spot-nano (lmcloud)");

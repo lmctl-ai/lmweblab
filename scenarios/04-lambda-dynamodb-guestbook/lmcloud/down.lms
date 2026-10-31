@@ -83,7 +83,7 @@ print("TOFU_STATE_EMPTY_OK: " + run_id + " (post-destroy plan add=" + str(post_p
 end _dsl_
 let dslb = path_join(state_dir, "down.dslb");
 savedsl(p, dslb);
-let r = system(concat(dsl_cli(p), ["--dsl", dslb]), DESTROY_TIMEOUT_MS);
+let r = system(concat(dsl_cli(p), ["--lmcode", dslb]), DESTROY_TIMEOUT_MS);
 let destroy_ms = now() - t_des0;
 println(r.stdout);
 if (r.code != 0) { println(r.stderr); }
@@ -116,7 +116,7 @@ let audit_dslb = path_join(state_dir, "audit.dslb");
 savedsl(audit_prog, audit_dslb);
 set_env("LMAWS_LIVE", live ? "1" : "0");
 set_env("LMAWS_MAX_COST_USD", "0.05");
-let r_aud = system(concat(dsl_cli(audit_prog), ["--dsl", audit_dslb]), 120000);
+let r_aud = system(concat(dsl_cli(audit_prog), ["--lmcode", audit_dslb]), 120000);
 assert(r_aud.code == 0, "lmaws audit failed: " + r_aud.stderr);
 
 for (fn_row in json_parse(read_file(f_file))) {

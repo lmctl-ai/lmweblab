@@ -129,7 +129,7 @@ end _dsl_
 
 let dslb = path_join(state_dir, "up.dslb");
 savedsl(up_prog, dslb);
-let r = system(concat(dsl_cli(up_prog), ["--dsl", dslb]), APPLY_TIMEOUT_MS);
+let r = system(concat(dsl_cli(up_prog), ["--lmcode", dslb]), APPLY_TIMEOUT_MS);
 let elapsed_ms = now() - t0;
 println(r.stdout);
 if (r.code != 0) { println(r.stderr); }

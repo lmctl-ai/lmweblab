@@ -32,7 +32,7 @@ end _dsl_
 
 state_dslb = ".lmweblab-local/lmcloud-status-state.dslb";
 savedsl(state_prog, state_dslb);
-r_st = system(concat(dsl_cli(state_prog), ["--dsl", state_dslb]), 60000);
+r_st = system(concat(dsl_cli(state_prog), ["--lmcode", state_dslb]), 60000);
 assert(r_st.code == 0);
 
 state_lines = trim(read_file(".lmweblab-local/status-state-list.txt"));

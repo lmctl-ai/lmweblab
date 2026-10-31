@@ -1,7 +1,7 @@
 # Import-only lmcurl live contracts. The lifecycle driver owns authorization and teardown.
 fn rw_http(p,label) {
   let file=".lmweblab-local/http-"+label+".dslb";savedsl(p,file);
-  let r=system(concat(dsl_cli(p),["--dsl",file]),60000);write_file(".lmweblab-local/http-"+label+".log",r.stdout+r.stderr);assert(r.code==0,"HTTP assertion failed; inspect private log");
+  let r=system(concat(dsl_cli(p),["--lmcode",file]),60000);write_file(".lmweblab-local/http-"+label+".log",r.stdout+r.stderr);assert(r.code==0,"HTTP assertion failed; inspect private log");
 }
 fn rw_poll(o,path,needle,rounds,delay) {
   let output=".lmweblab-local/poll.json";

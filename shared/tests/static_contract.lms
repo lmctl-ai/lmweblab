@@ -53,6 +53,6 @@ mock.stop();
 println("static contract passed");
 end _dsl_
 savedsl(p,".lmweblab-static.dslb");
-r = system ${dsl_cli(p)} --dsl .lmweblab-static.dslb;
+r = system ${dsl_cli(p)} --lmcode .lmweblab-static.dslb;
 if(r.code!=0){mkdir(".lmweblab-local");write_file(".lmweblab-local/static_contract-error.log",r.stdout+"\n"+r.stderr);println(r.stdout);println(r.stderr);}
 assert(r.code==0);

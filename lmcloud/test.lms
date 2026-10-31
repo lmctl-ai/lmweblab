@@ -79,7 +79,7 @@ end _dsl_
   is_ready = false;
   while (attempt < 18 && !is_ready) {
     attempt = attempt + 1;
-    r_ready = system(concat(dsl_cli(ready_prog), ["--dsl", ready_dslb]), 60000);
+    r_ready = system(concat(dsl_cli(ready_prog), ["--lmcode", ready_dslb]), 60000);
     if (r_ready.code == 0) {
       is_ready = true;
     } else {
@@ -229,7 +229,7 @@ end _dsl_
 
   dslb = ".lmweblab-local/lmcloud-test-live.dslb";
   savedsl(p, dslb);
-  r = system(concat(dsl_cli(p), ["--dsl", dslb]), 600000);
+  r = system(concat(dsl_cli(p), ["--lmcode", dslb]), 600000);
   test_suite_ms = now() - t_suite0;
   if (r.code != 0) {
     println(r.stdout);
@@ -309,7 +309,7 @@ end _dsl_
 
   dslb = ".lmweblab-local/lmcloud-test-offline.dslb";
   savedsl(p, dslb);
-  r = system(concat(dsl_cli(p), ["--dsl", dslb]), 120000);
+  r = system(concat(dsl_cli(p), ["--lmcode", dslb]), 120000);
   if (r.code != 0) {
     println(r.stdout);
     println(r.stderr);
@@ -351,7 +351,7 @@ end _dsl_
 
 arch_dslb = ".lmweblab-local/lmcloud-arch.dslb";
 savedsl(arch, arch_dslb);
-r_arch = system(concat(dsl_cli(arch), ["--dsl", arch_dslb]), 60000);
+r_arch = system(concat(dsl_cli(arch), ["--lmcode", arch_dslb]), 60000);
 assert(r_arch.code == 0, "lmdraw architecture render failed: " + r_arch.stderr);
 
 # Render latency chart with lmplot
@@ -368,7 +368,7 @@ end _dsl_
 
 plot_dslb = ".lmweblab-local/lmcloud-plot.dslb";
 savedsl(plot, plot_dslb);
-r_plot = system(concat(dsl_cli(plot), ["--dsl", plot_dslb]), 60000);
+r_plot = system(concat(dsl_cli(plot), ["--lmcode", plot_dslb]), 60000);
 assert(r_plot.code == 0, "lmplot latency render failed: " + r_plot.stderr);
 
 elapsed_ms = now() - t0;

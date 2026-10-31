@@ -6,8 +6,8 @@ let IMAGE="images/s09_lmaws_architecture.png";
 let plot=_dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
 plot.png("images/s09_lmaws_hits.png",900,500);plot.cmd("set datafile separator ','");plot.cmd("set title 'URL redirects and atomic hit counters (synthetic)'");plot.cmd("set ylabel 'hits'");plot.cmd("set style data histograms; set style fill solid 0.85; set boxwidth 0.65; set style histogram clustered gap 1");plot.cmd("plot 'data/redirects.csv' skip 1 using 2:xtic(1) lc rgb '#38bdf8' notitle");plot.close();
 end _dsl_
-savedsl(plot,".report.dslb");let r=system(concat(dsl_cli(plot),["--dsl",".report.dslb"]),60000);assert(r.code==0,"lmplot report failed: "+r.stderr);
+savedsl(plot,".report.dslb");let r=system(concat(dsl_cli(plot),["--lmcode",".report.dslb"]),60000);assert(r.code==0,"lmplot report failed: "+r.stderr);
 let draw=_dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
 scene.canvas(900,500,"#0d1117");scene.text(450.0,42.0,24.0,"URL Shortener: Redirect + Atomic Hit Counter","#e6edf3").set_attr("text-anchor","middle");scene.rect(60.0,180.0,220.0,100.0,"#161b22").set_attr("stroke","#58a6ff").set_attr("stroke-width","2");scene.text(170.0,230.0,16.0,"Lambda URL","#58a6ff").set_attr("text-anchor","middle");scene.arrow(290.0,230.0,400.0,230.0,"#3fb950",3.0);scene.rect(410.0,180.0,220.0,100.0,"#161b22").set_attr("stroke","#3fb950").set_attr("stroke-width","2");scene.text(520.0,220.0,15.0,"DynamoDB links","#3fb950").set_attr("text-anchor","middle");scene.text(520.0,245.0,12.0,"conditional update","#c9d1d9").set_attr("text-anchor","middle");scene.arrow(640.0,230.0,760.0,230.0,"#ff7b72",3.0);scene.text(800.0,220.0,14.0,"301 / 302","#ff7b72").set_attr("text-anchor","middle");scene.render_png("images/s09_lmaws_architecture.png",900,500,1);
 end _dsl_
-savedsl(draw,".draw.dslb");let d=system(concat(dsl_cli(draw),["--dsl",".draw.dslb"]),60000);assert(d.code==0,"lmdraw report failed");
+savedsl(draw,".draw.dslb");let d=system(concat(dsl_cli(draw),["--lmcode",".draw.dslb"]),60000);assert(d.code==0,"lmdraw report failed");

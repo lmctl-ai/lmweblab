@@ -6,7 +6,7 @@ fn sa_exec(p, o, name, timeout_ms) {
   assert(num(version[0])>0||num(version[1])>1||num(version[2])>=16,"lmaws >=0.1.16 required; remove older PATH executable or supply current host");
   let code=".lmweblab-local/"+name+".dslb"; savedsl(p,code);
   let flags=o.live?["--live","--profile","lmaws","--region",o.region]:["--dry-run"];
-  let command=concat(dsl_cli(p),concat(flags,["--dsl",code]));
+  let command=concat(dsl_cli(p),concat(flags,["--lmcode",code]));
   if(getenv("OS","")!="Windows_NT"){command=concat(["env","AWS_PROFILE=lmaws","AWS_REGION="+o.region,"LMAWS_LIVE="+(o.live?"1":"0"),"LMAWS_MAX_COST_USD="+o.cap,"LMAWS_LEDGER_DIR=.lmweblab-local/ledgers","LMAWS_EVIDENCE_DIR=.lmweblab-local/evidence"],command);}
   let r=system(command,timeout_ms);
   write_file(".lmweblab-local/"+name+".log",r.stdout+"\n"+r.stderr);
@@ -53,7 +53,7 @@ let r=curl.session("https://checkip.amazonaws.com").get("/").timeout(${o.timeout
 assert_eq(r.status(),200);file_write(".lmweblab-local/caller-ip.txt",str_trim(r.body()));
 end _dsl_
       let code=".lmweblab-local/caller.dslb";savedsl(p,code);
-      let r=system(concat(dsl_cli(p),["--dsl",code]),60000);assert(r.code==0,"caller /32 detection failed");
+      let r=system(concat(dsl_cli(p),["--lmcode",code]),60000);assert(r.code==0,"caller /32 detection failed");
       cidr=trim(read_file(".lmweblab-local/caller-ip.txt"))+"/32";
     }
     if(cidr==""){cidr="203.0.113.10/32";}
@@ -99,7 +99,7 @@ end _dsl_
       let code=".lmweblab-local/ready.dslb";savedsl(ready,code);
       let ready_ok=false;let round=0;
       while(!ready_ok&&round<6){
-        round=round+1;let result=system(concat(dsl_cli(ready),["--dsl",code]),90000);
+        round=round+1;let result=system(concat(dsl_cli(ready),["--lmcode",code]),90000);
         write_file(".lmweblab-local/readiness-"+o.run_id+"-"+str(round)+".log",result.stdout+result.stderr);
         ready_ok=result.code==0;
       }
@@ -222,7 +222,7 @@ if(weight==100){assert_eq(a,n);}
 mock.stop();
 end _dsl_
     let code=".lmweblab-local/probe-"+str(step)+".dslb";savedsl(probe,code);
-    let r=system(concat(dsl_cli(probe),["--dsl",code]),300000);
+    let r=system(concat(dsl_cli(probe),["--lmcode",code]),300000);
     write_file(".lmweblab-local/probe-"+str(step)+".log",r.stdout+r.stderr);
     assert(r.code==0,"weighted DNS measurement failed; inspect private probe log");
     push(results,json_parse(read_file(output)));

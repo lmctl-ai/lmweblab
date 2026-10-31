@@ -4,7 +4,7 @@ import "./serverless_http.lms";
 fn sv_dispatch(program,o,name,limit) {
   let code=".lmweblab-local/"+o.run_id+"-"+name+".dslb";savedsl(program,code);
   let flags=o.live?["--live","--profile","lmaws","--region",o.region]:["--dry-run"];
-  let command=concat(dsl_cli(program),concat(flags,["--dsl",code]));
+  let command=concat(dsl_cli(program),concat(flags,["--lmcode",code]));
   let settings=["env","AWS_PROFILE=lmaws","AWS_DEFAULT_PROFILE=lmaws","AWS_REGION="+o.region,"AWS_DEFAULT_REGION="+o.region,"LMAWS_LIVE="+(o.live?"1":"0"),"LMAWS_MAX_COST_USD="+o.cap,"LMAWS_LEDGER_DIR=.lmweblab-local/ledgers","LMAWS_EVIDENCE_DIR=.lmweblab-local/evidence"];
   let result=system(concat(settings,command),limit);
   write_file(".lmweblab-local/"+o.run_id+"-"+name+".log",result.stdout+result.stderr);

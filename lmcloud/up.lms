@@ -94,7 +94,7 @@ file_write(".lmweblab-local/caller-ip.txt", ip);
 end _dsl_
     ip_dslb = ".lmweblab-local/detect-ip.dslb";
     savedsl(ip_prog, ip_dslb);
-    r_ip = system(concat(dsl_cli(ip_prog), ["--dsl", ip_dslb]), 30000);
+    r_ip = system(concat(dsl_cli(ip_prog), ["--lmcode", ip_dslb]), 30000);
     assert(r_ip.code == 0, "Failed to detect caller public IP via checkip.amazonaws.com: " + r_ip.stderr);
     detected_ip = trim(read_file(".lmweblab-local/caller-ip.txt"));
     assert(regex_test(detected_ip, "^[0-9]{1,3}(\\.[0-9]{1,3}){3}$"), "Invalid IPv4 from checkip: " + detected_ip);
@@ -146,7 +146,7 @@ end _dsl_
 
 init_dslb = ".lmweblab-local/lmcloud-init.dslb";
 savedsl(init_prog, init_dslb);
-r_init = system(concat(dsl_cli(init_prog), ["--dsl", init_dslb]), 300000);
+r_init = system(concat(dsl_cli(init_prog), ["--lmcode", init_dslb]), 300000);
 init_validate_ms = now() - t_init0;
 println(r_init.stdout);
 if (r_init.code != 0) {
@@ -200,7 +200,7 @@ end _dsl_
 
 plan_dslb = ".lmweblab-local/lmcloud-plan.dslb";
 savedsl(plan_prog, plan_dslb);
-r_plan = system(concat(dsl_cli(plan_prog), ["--dsl", plan_dslb]), 300000);
+r_plan = system(concat(dsl_cli(plan_prog), ["--lmcode", plan_dslb]), 300000);
 plan_ms = now() - t_plan0;
 println(r_plan.stdout);
 if (r_plan.code != 0) {
@@ -262,7 +262,7 @@ end _dsl_
 
   apply_dslb = ".lmweblab-local/lmcloud-apply.dslb";
   savedsl(apply_prog, apply_dslb);
-  r_apply = system(concat(dsl_cli(apply_prog), ["--dsl", apply_dslb]), 1500000);
+  r_apply = system(concat(dsl_cli(apply_prog), ["--lmcode", apply_dslb]), 1500000);
   apply_ms = now() - t_apply0;
   println(r_apply.stdout);
   if (r_apply.code != 0) {

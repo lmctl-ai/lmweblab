@@ -16,11 +16,11 @@ scene.connector(dns,"e",app,"w","elbow","none","arrow","none","#34d399",2.0,"Dyn
 scene.text(32.0,375.0,14.0,"lmcurl DoH + unique ECS subnet -> explicit resolve -> binomial check -> owned teardown","#cbd5e1");
 scene.render_png("images/architecture.png",1000,420,1);
 end _dsl_
-savedsl(draw,".lmweblab-local/draw.dslb");let r=system(concat(dsl_cli(draw),["--dsl",".lmweblab-local/draw.dslb"]),120000);assert(r.code==0);
+savedsl(draw,".lmweblab-local/draw.dslb");let r=system(concat(dsl_cli(draw),["--lmcode",".lmweblab-local/draw.dslb"]),120000);assert(r.code==0);
 write_file(".lmweblab-local/synthetic.dat","app 0 100\nmaintenance 100 0\nrecovery 0 100\n");
 let plot=_dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
 plot.png("images/results.png",900,440);
 plot.cmd("set title 'Synthetic fixture targets (not live measurements)'; set ylabel 'share (%)'; set yrange [0:125]; set grid ytics; set key top right; set style data histograms; set style histogram cluster gap 1; set style fill solid 0.8; set boxwidth 0.7");
 plot.cmd("plot '.lmweblab-local/synthetic.dat' using 2:xtic(1) title 'Static' lc rgb '#818cf8', '' using 3 title 'Dynamic' lc rgb '#34d399'");plot.close();
 end _dsl_
-savedsl(plot,".lmweblab-local/plot.dslb");r=system(concat(dsl_cli(plot),["--dsl",".lmweblab-local/plot.dslb"]),120000);assert(r.code==0);
+savedsl(plot,".lmweblab-local/plot.dslb");r=system(concat(dsl_cli(plot),["--lmcode",".lmweblab-local/plot.dslb"]),120000);assert(r.code==0);

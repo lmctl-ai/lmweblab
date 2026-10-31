@@ -80,7 +80,7 @@ file_write(${ip_file}, ip);
 end _dsl_
   let ip_dslb = path_join(state_dir, "detect-ip.dslb");
   savedsl(ip_prog, ip_dslb);
-  let r_ip = system(concat(dsl_cli(ip_prog), ["--dsl", ip_dslb]), 30000);
+  let r_ip = system(concat(dsl_cli(ip_prog), ["--lmcode", ip_dslb]), 30000);
   assert(r_ip.code == 0, "Failed to detect caller public IP via checkip.amazonaws.com: " + r_ip.stderr);
   let detected_ip = trim(read_file(ip_file));
   assert(regex_test(detected_ip, "^[0-9]{1,3}(\\.[0-9]{1,3}){3}$"), "Invalid IPv4 from checkip: " + detected_ip);
@@ -112,7 +112,7 @@ end _dsl_
   savedsl(audit_prog, audit_dslb);
   set_env("LMAWS_LIVE", live ? "1" : "0");
   set_env("LMAWS_MAX_COST_USD", "0.05");
-  let r_audit = system(concat(dsl_cli(audit_prog), ["--dsl", audit_dslb]), 120000);
+  let r_audit = system(concat(dsl_cli(audit_prog), ["--lmcode", audit_dslb]), 120000);
   assert(r_audit.code == 0, "lmaws leftover audit failed: " + r_audit.stderr);
 
   let buckets_list = json_parse(read_file(b_file));

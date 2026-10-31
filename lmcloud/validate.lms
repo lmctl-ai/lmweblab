@@ -55,7 +55,7 @@ end _dsl_
 out = ".lmweblab-local/lmcloud-validate.dslb";
 savedsl(p, out);
 set_env("AWS_EC2_METADATA_DISABLED", "true");
-r = system(concat(dsl_cli(p), ["--dsl", out]), 120000);
+r = system(concat(dsl_cli(p), ["--lmcode", out]), 120000);
 println(r.stdout);
 if (r.code != 0) {
   println(r.stderr);

@@ -62,7 +62,7 @@ file_write(${ip_file}, str_trim(resp.body()));
 end _dsl_
     let ip_dslb = path_join(state_dir, "detect-ip.dslb");
     savedsl(ip_prog, ip_dslb);
-    let r_ip = system(concat(dsl_cli(ip_prog), ["--dsl", ip_dslb]), 30000);
+    let r_ip = system(concat(dsl_cli(ip_prog), ["--lmcode", ip_dslb]), 30000);
     assert(r_ip.code == 0, "Failed to detect caller public IP: " + r_ip.stderr);
     caller_cidr = trim(read_file(ip_file)) + "/32";
   } else {
@@ -164,7 +164,7 @@ end _dsl_
 
 let up_dslb = path_join(state_dir, "up.dslb");
 savedsl(up_prog, up_dslb);
-let r_up = system(concat(dsl_cli(up_prog), ["--dsl", up_dslb]), APPLY_TIMEOUT_MS);
+let r_up = system(concat(dsl_cli(up_prog), ["--lmcode", up_dslb]), APPLY_TIMEOUT_MS);
 println(r_up.stdout);
 if (r_up.code != 0) { println(r_up.stderr); }
 assert(r_up.code == 0, "scenario 02 up.lms failed");

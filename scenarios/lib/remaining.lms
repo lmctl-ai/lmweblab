@@ -3,13 +3,13 @@ import "./remaining_contracts.lms";
 import "./remaining_upload.lms";
 fn rw_exec(p,o,label,limit) {
   let code=".lmweblab-local/"+label+".dslb";savedsl(p,code);
-  let command=concat(dsl_cli(p),[o.live?"--live":"--dry-run","--profile","lmaws","--dsl",code]);
+  let command=concat(dsl_cli(p),[o.live?"--live":"--dry-run","--profile","lmaws","--lmcode",code]);
   let r=system(concat(["env","AWS_PROFILE=lmaws","AWS_DEFAULT_PROFILE=lmaws","AWS_REGION="+o.region,"LMAWS_LIVE="+(o.live?"1":"0"),"LMAWS_MAX_COST_USD="+(o.number=="10"?str(num(o.cap)/2):o.cap),"LMAWS_LEDGER_DIR=.lmweblab-local/ledgers","LMAWS_EVIDENCE_DIR=.lmweblab-local/evidence"],command),limit);
   write_file(".lmweblab-local/"+label+".log",r.stdout+r.stderr);assert(r.code==0,"lmaws failed; inspect private "+label+".log");
 }
 fn rw_exec_try(p,o,label,limit) {
   let code=".lmweblab-local/"+label+".dslb";savedsl(p,code);
-  let command=concat(dsl_cli(p),[o.live?"--live":"--dry-run","--profile","lmaws","--dsl",code]);
+  let command=concat(dsl_cli(p),[o.live?"--live":"--dry-run","--profile","lmaws","--lmcode",code]);
   let r=system(concat(["env","AWS_PROFILE=lmaws","AWS_DEFAULT_PROFILE=lmaws","AWS_REGION="+o.region,"LMAWS_LIVE="+(o.live?"1":"0"),"LMAWS_MAX_COST_USD="+(o.number=="10"?str(num(o.cap)/2):o.cap),"LMAWS_LEDGER_DIR=.lmweblab-local/ledgers","LMAWS_EVIDENCE_DIR=.lmweblab-local/evidence"],command),limit);
   write_file(".lmweblab-local/"+label+".log",r.stdout+r.stderr);return r;
 }

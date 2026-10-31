@@ -12,7 +12,7 @@ let s=curl.session(${base}); let post=s.post("/entries").body("{\"author\":\"A\"
 let page=s.get("/entries?limit=1").proxy("").timeout(${REQUEST_TIMEOUT_MS}).send(); assert_eq(page.status(),200); assert_eq(page.json("$.total").value(),"1"); let first_message=page.json("$.items[0].message").value(); assert(page.json("$.items[0].expires_at").value()!=""); let cursor=page.json("$.next_cursor").value(); assert(cursor!=""); let page2=s.get("/entries?limit=1&cursor="+cursor).proxy("").timeout(${REQUEST_TIMEOUT_MS}).send(); let second_message=page2.json("$.items[0].message").value(); assert((first_message=="&lt;script&gt;alert(1)&lt;/script&gt;"&&second_message=="second")||(second_message=="&lt;script&gt;alert(1)&lt;/script&gt;"&&first_message=="second"));
 let load=curl.load(s.get("/entries?limit=1").proxy(""),4,1.0,16); assert_eq(load.threshold(str_to_float(${P95_THRESHOLD_MS}),0.0),true); file_write("data/s04_lmaws_latency.csv","metric,ms\npost,"+str(post.time("total"))+"\nget p95,"+str(load.p95_ms())+"\n");
 end _dsl_
-savedsl(p,".lmweblab-local/test.dslb");let r=system(concat(dsl_cli(p),["--dsl",".lmweblab-local/test.dslb"]),120000);assert(r.code==0,"scenario 04 lmcurl test failed");write_file(stop_file,"stop\n");}
+savedsl(p,".lmweblab-local/test.dslb");let r=system(concat(dsl_cli(p),["--lmcode",".lmweblab-local/test.dslb"]),120000);assert(r.code==0,"scenario 04 lmcurl test failed");write_file(stop_file,"stop\n");}
 serve_fixture(); run_contract();
 let draw=_dsl_ cli="lmdraw" install="github:lmctl-ai/lmdraw@latest";
 scene.canvas(900,320,"#0f172a");
@@ -21,11 +21,11 @@ let a=scene.box(90.0,140.0,200.0,70.0,"Function URL","#1e293b","#38bdf8",8.0,14.
 scene.connector(a,"e",b,"w","straight","none","arrow","none","#fbbf24",2.0,"entries",0.5,0.0,0.0);
 scene.render_png("images/s04_lmaws_architecture.png",900,320,1);
 end _dsl_
-savedsl(draw,".lmweblab-local/draw.dslb"); assert(system(concat(dsl_cli(draw),["--dsl",".lmweblab-local/draw.dslb"]),120000).code==0);
+savedsl(draw,".lmweblab-local/draw.dslb"); assert(system(concat(dsl_cli(draw),["--lmcode",".lmweblab-local/draw.dslb"]),120000).code==0);
 let plot=_dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
 plot.png("images/s04_lmaws_latency.png",860,480);
 plot.cmd("set datafile separator ','; set title 'Scenario 04 latency (ms)'; set style data histograms; unset key; set grid y");
 plot.cmd("plot 'data/s04_lmaws_latency.csv' every ::1 using 2:xtic(1) lc rgb '#38bdf8'");
 plot.close();
 end _dsl_
-savedsl(plot,".lmweblab-local/plot.dslb"); assert(system(concat(dsl_cli(plot),["--dsl",".lmweblab-local/plot.dslb"]),120000).code==0); println("PASS scenario 04 test; pagination and HTML escaping asserted"); println("estimated cost: $0.0000");
+savedsl(plot,".lmweblab-local/plot.dslb"); assert(system(concat(dsl_cli(plot),["--lmcode",".lmweblab-local/plot.dslb"]),120000).code==0); println("PASS scenario 04 test; pagination and HTML escaping asserted"); println("estimated cost: $0.0000");

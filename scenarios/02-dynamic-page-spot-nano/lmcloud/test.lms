@@ -112,7 +112,7 @@ file_write(out_csv, csv);
 end _dsl_
   let dslb = path_join(state_dir, "test-live.dslb");
   savedsl(p, dslb);
-  let r = system(concat(dsl_cli(p), ["--dsl", dslb]), 300000);
+  let r = system(concat(dsl_cli(p), ["--lmcode", dslb]), 300000);
   assert(r.code == 0, "scenario 02 live test failed: " + r.stderr);
 } else {
   let app_host = get(meta, "app_fqdn", NAME_PREFIX + "-tf-" + SCENARIO_SLUG + "-app-demo01." + DOMAIN);
@@ -162,7 +162,7 @@ m.stop();
 end _dsl_
   let dslb = path_join(state_dir, "test-offline.dslb");
   savedsl(p, dslb);
-  let r = system(concat(dsl_cli(p), ["--dsl", dslb]), 60000);
+  let r = system(concat(dsl_cli(p), ["--lmcode", dslb]), 60000);
   assert(r.code == 0, "scenario 02 offline test failed: " + r.stderr);
 }
 
@@ -190,7 +190,7 @@ scene.render_png(out_png, 920, 360, 1);
 end _dsl_
 let arch_dslb = path_join(state_dir, "arch.dslb");
 savedsl(arch, arch_dslb);
-let r_arch = system(concat(dsl_cli(arch), ["--dsl", arch_dslb]), 60000);
+let r_arch = system(concat(dsl_cli(arch), ["--lmcode", arch_dslb]), 60000);
 assert(r_arch.code == 0, "lmdraw render failed: " + r_arch.stderr);
 
 let plot = _dsl_ cli="lmplot" install="github:lmctl-ai/lmplot@latest";
@@ -206,7 +206,7 @@ plot.close();
 end _dsl_
 let plot_dslb = path_join(state_dir, "plot.dslb");
 savedsl(plot, plot_dslb);
-let r_plot = system(concat(dsl_cli(plot), ["--dsl", plot_dslb]), 60000);
+let r_plot = system(concat(dsl_cli(plot), ["--lmcode", plot_dslb]), 60000);
 assert(r_plot.code == 0, "lmplot render failed: " + r_plot.stderr);
 
 if (stack_dir != ".") {
