@@ -4,6 +4,13 @@
 
 `lmweblab` is a pictures-first integration test for the same tagged web stack implemented with lmaws and lmcloud. The lmaws driver provisions a private S3 site, CloudFront, Route 53 records, and a disposable tagged nano web server; lmcurl performs the HTTP assertions and p95 load check.
 
+## Documentation
+
+- [Quick reference](https://www.lmctl.com/tools/lmweblab/)
+- [LLM skill](https://www.lmctl.com/tools/lmweblab/skill.html)
+- [Guide](https://www.lmctl.com/tools/lmweblab/guide.html)
+- [Reference](https://www.lmctl.com/tools/lmweblab/reference.html)
+
 | Picture | Runnable example |
 | --- | --- |
 | ![stack architecture](images/lmaws_architecture.png) | `lmctl https://raw.githubusercontent.com/lmctl-ai/lmweblab/main/lmaws/report.lms` |
